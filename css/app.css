@@ -151,6 +151,27 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 
 /* ---------- Today ---------- */
 
+.today { position: relative; overflow: hidden; isolation: isolate; }
+.today > :not(.aclock) { position: relative; z-index: 1; }
+
+/* Analog clock: a translucent layer under the card content */
+.aclock {
+  position: absolute; z-index: 0; top: 50%; left: 50%;
+  height: 96%; width: auto; aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  pointer-events: none; overflow: visible;
+  --ac-ink: var(--text);
+}
+.aclock .face { fill: var(--accent); fill-opacity: .035; stroke: var(--ac-ink); stroke-opacity: .10; stroke-width: 1.5; }
+.aclock .ticks line { stroke: var(--ac-ink); stroke-linecap: round; }
+.aclock .ticks .m { stroke-width: 1; stroke-opacity: .10; }
+.aclock .ticks .h { stroke-width: 3; stroke-opacity: .18; }
+.aclock line[class^="hand"] { stroke-linecap: round; }
+.aclock .hand-h { stroke: var(--accent); stroke-width: 7; stroke-opacity: .22; }
+.aclock .hand-m { stroke: var(--accent); stroke-width: 4.5; stroke-opacity: .22; }
+.aclock .hand-s { stroke: var(--off); stroke-width: 1.6; stroke-opacity: .45; }
+.aclock .pin { fill: var(--off); fill-opacity: .5; stroke: none; }
+
 .today-head { display: flex; align-items: center; gap: 14px; }
 .today-num { font-size: 64px; font-weight: 750; line-height: .9; letter-spacing: -.04em; color: var(--accent); font-variant-numeric: tabular-nums; }
 .today-meta { flex: 1; min-width: 0; }

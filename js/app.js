@@ -38,7 +38,7 @@ function commit({ keepSettings = false } = {}) {
 function renderToday() {
   const i = cal.info(now);
   const y = now.getFullYear();
-  $('#today').innerHTML = `
+  $('#today').innerHTML = `${state.settings.analogClock ? analogClockSvg() : ''}
     <div class="today-head">
       <div class="today-num">${now.getDate()}</div>
       <div class="today-meta">
@@ -60,6 +60,40 @@ function renderToday() {
         </div>`).join('')}
     </div>`;
   tickToday();
+}
+
+/** Translucent analog clock drawn under the Today card's content. */
+function analogClockSvg() {
+  let ticks = '';
+  for (let i = 0; i < 60; i++) {
+    const hour = i % 5 === 0;
+    const a = (i * 6 * Math.PI) / 180;
+    const r1 = hour ? 80 : 88;
+    const x1 = (Math.sin(a) * r1).toFixed(2);
+    const y1 = (-Math.cos(a) * r1).toFixed(2);
+    const x2 = (Math.sin(a) * 94).toFixed(2);
+    const y2 = (-Math.cos(a) * 94).toFixed(2);
+    ticks += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="${hour ? 'h' : 'm'}"/>`;
+  }
+  return `<svg class="aclock" viewBox="-100 -100 200 200" aria-hidden="true">
+    <circle r="97" class="face"/>
+    <g class="ticks">${ticks}</g>
+    <line id="acH" class="hand-h" x1="0" y1="10" x2="0" y2="-48"/>
+    <line id="acM" class="hand-m" x1="0" y1="12" x2="0" y2="-74"/>
+    <line id="acS" class="hand-s" x1="0" y1="18" x2="0" y2="-84"/>
+    <circle r="4" class="pin"/>
+  </svg>`;
+}
+
+function tickAnalog() {
+  const h = $('#acH');
+  if (!h) return;
+  const sec = now.getSeconds();
+  const min = now.getMinutes() + sec / 60;
+  const hr = (now.getHours() % 12) + min / 60;
+  h.setAttribute('transform', `rotate(${(hr * 30).toFixed(2)})`);
+  $('#acM').setAttribute('transform', `rotate(${(min * 6).toFixed(2)})`);
+  $('#acS').setAttribute('transform', `rotate(${sec * 6})`);
 }
 
 /** Days of the current week / month: [{ d, off }] */
@@ -104,6 +138,7 @@ function remainText(ms) {
 
 function tickToday() {
   setText($('#clock'), `${pad2(now.getHours())}:${pad2(now.getMinutes())}:${pad2(now.getSeconds())}`);
+  tickAnalog();
   const today = startOfDay(now);
   const s = state.settings;
   const i = cal.info(now);
@@ -519,6 +554,7 @@ function renderSettings() {
       </label>
     </div>
     <label class="chk"><input type="checkbox" data-s="weekNumbers"${s.weekNumbers ? ' checked' : ''}> Номера недель</label>
+    <label class="chk"><input type="checkbox" data-s="analogClock"${s.analogClock ? ' checked' : ''}> Аналоговые часы в «Сегодня»</label>
     <p class="muted small">Любой день можно сделать выходным или рабочим: выберите его в календаре.</p>
 
     <h3>Перенос между устройствами</h3>

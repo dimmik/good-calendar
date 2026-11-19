@@ -20,6 +20,7 @@ export function defaultState() {
       workEnd: '18:00',
       builtins: { payday: true, weekend: true, workday: true, holiday: true, newyear: true },
       weekNumbers: false,
+      analogClock: true,
       theme: 'auto',
     },
   };
@@ -89,6 +90,7 @@ export function normalize(raw) {
   if (isStr(s.workStart, 5) && reTime.test(s.workStart)) settings.workStart = s.workStart;
   if (isStr(s.workEnd, 5) && reTime.test(s.workEnd)) settings.workEnd = s.workEnd;
   if (typeof s.weekNumbers === 'boolean') settings.weekNumbers = s.weekNumbers;
+  if (typeof s.analogClock === 'boolean') settings.analogClock = s.analogClock;
   if (['auto', 'light', 'dark'].includes(s.theme)) settings.theme = s.theme;
   settings.builtins = { ...d.settings.builtins };
   if (s.builtins && typeof s.builtins === 'object') {
