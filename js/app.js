@@ -11,7 +11,7 @@ import {
   sanitizeEvent, COLORS, STORAGE_KEY, SHARE_PARAM,
 } from './store.js';
 
-const VERSION = '1.1.0';
+const VERSION = '1.2.0';
 
 let state = load();
 let cal = makeCal(state);
@@ -56,10 +56,42 @@ function renderToday() {
       ${['day', 'work', 'week', 'month', 'year'].map((k) => `
         <div class="bar" data-bar="${k}">
           <div class="bar-top"><span class="bar-l"></span><span class="bar-r"></span></div>
-          <div class="bar-track"><div class="bar-fill"></div></div>
+          ${k === 'week' || k === 'month' ? segTrack(k) : '<div class="bar-track"><div class="bar-fill"></div></div>'}
         </div>`).join('')}
     </div>`;
   tickToday();
+}
+
+/** Days of the current week / month: [{ d, off }] */
+function periodDays(k) {
+  const today = startOfDay(now);
+  const from = k === 'week' ? addDays(today, -wdMon(today)) : new Date(now.getFullYear(), now.getMonth(), 1);
+  const n = k === 'week' ? 7 : daysInMonth(now.getFullYear(), now.getMonth());
+  return Array.from({ length: n }, (_, i) => {
+    const d = addDays(from, i);
+    return { d, off: cal.info(d).off };
+  });
+}
+
+/** A bar split into days; days off are tinted, so the working part of the period is visible. */
+function segTrack(k) {
+  return `<div class="bar-track seg">${periodDays(k).map(({ d, off }) => `<i class="${off ? 'off' : ''}" title="${esc(`${d.getDate()} ${MONTHS_GEN[d.getMonth()]}${off ? ', выходной' : ''}`)}"><b></b></i>`).join('')}</div>`;
+}
+
+/** Share of this week's working time already behind (by working hours), or null without workdays. */
+function workWeekProgress() {
+  const s = state.settings;
+  let total = 0;
+  let done = 0;
+  for (const { d, off } of periodDays('week')) {
+    if (off) continue;
+    const a = withTime(d, s.workStart);
+    const z = withTime(d, s.workEnd);
+    if (z <= a) continue;
+    total += z - a;
+    done += Math.min(z - a, Math.max(0, now - a));
+  }
+  return total ? done / total : null;
 }
 
 function remainText(ms) {
@@ -80,6 +112,7 @@ function tickToday() {
     day: ['День', today, addDays(today, 1)],
     work: !i.off && withTime(today, s.workStart) < withTime(today, s.workEnd)
       ? ['Рабочий день', withTime(today, s.workStart), withTime(today, s.workEnd)] : null,
+    // week and month bars are drawn per day (see segTrack)
     week: ['Неделя', weekStart, addDays(weekStart, 7)],
     month: [cap(MONTHS[now.getMonth()]), new Date(now.getFullYear(), now.getMonth(), 1), new Date(now.getFullYear(), now.getMonth() + 1, 1)],
     year: [`${now.getFullYear()} год`, new Date(now.getFullYear(), 0, 1), new Date(now.getFullYear() + 1, 0, 1)],
@@ -97,9 +130,19 @@ function tickToday() {
     } else {
       right = `${(p * 100).toFixed(el.dataset.bar === 'year' ? 1 : 0)}% · ещё ${remainText(left)}`;
     }
+    if (el.dataset.bar === 'week') {
+      const wp = workWeekProgress();
+      if (wp != null) right = right.replace(' · ', ` · рабочая ${Math.round(wp * 100)}% · `);
+    }
     setText($('.bar-l', el), label);
     setText($('.bar-r', el), right);
-    $('.bar-fill', el).style.width = `${(p * 100).toFixed(2)}%`;
+    const fill = $('.bar-fill', el);
+    if (fill) fill.style.width = `${(p * 100).toFixed(2)}%`;
+    const segs = $$('.seg b', el);
+    segs.forEach((b, idx) => {
+      const sp = Math.min(1, Math.max(0, p * segs.length - idx));
+      b.style.width = `${(sp * 100).toFixed(2)}%`;
+    });
   }
 }
 

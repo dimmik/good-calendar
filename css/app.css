@@ -173,6 +173,14 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .bar-track { height: 6px; border-radius: 3px; background: var(--card2); overflow: hidden; }
 .bar-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width .6s; }
 .bar[data-bar="work"] .bar-fill { background: var(--pay); }
+.bar-track.seg { display: flex; gap: 2px; background: none; border-radius: 3px; }
+.bar-track.seg i { flex: 1; min-width: 0; height: 100%; background: var(--card2); overflow: hidden; }
+.bar-track.seg i:first-child { border-radius: 3px 0 0 3px; }
+.bar-track.seg i:last-child { border-radius: 0 3px 3px 0; }
+.bar-track.seg b { display: block; height: 100%; width: 0; background: var(--accent); transition: width .6s; }
+.bar-track.seg i.off { background: var(--off-soft); }
+.bar-track.seg i.off b { background: var(--off); opacity: .75; }
+.bar[data-bar="month"] .bar-track.seg { gap: 1px; }
 
 /* ---------- Countdowns ---------- */
 
