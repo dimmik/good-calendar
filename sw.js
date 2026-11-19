@@ -1,5 +1,5 @@
 // Network first (always fresh when online), cache as offline fallback.
-const CACHE = 'good-calendar-v1';
+const CACHE = 'good-calendar-v2';
 const ASSETS = [
   './',
   'index.html',

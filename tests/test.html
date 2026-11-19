@@ -4,13 +4,39 @@
 <pre id="out">running…</pre>
 <script type="module">
 import { ymd, parseYmd, isoWeek, plural } from '../js/dates.js';
-import { makeCal, dayInfo, nextPayday, paydayIn, eventDatesInRange, nextOccurrence, buildCountdowns, countWorkDays, nextHoliday } from '../js/rules.js';
+import { makeCal, dayInfo, orthodoxEaster, nextPayday, paydayIn, eventDatesInRange, nextOccurrence, buildCountdowns, countWorkDays, nextHoliday } from '../js/rules.js';
 import { defaultState, normalize, encodeShare, decodeShare, mergeStates } from '../js/store.js';
 
 const results = [];
 const eq = (name, got, want) => results.push([JSON.stringify(got) === JSON.stringify(want), name, got, want]);
 
+// Serbia (default)
+const rs = makeCal(defaultState());
+const rsOff = (s) => rs.info(parseYmd(s)).off;
+eq('default country', defaultState().settings.country, 'rs');
+eq('orthodox Easter', [2021, 2024, 2025, 2026, 2027].map((y) => ymd(orthodoxEaster(y))), ['2021-05-02', '2024-05-05', '2025-04-20', '2026-04-12', '2027-05-02']);
+eq('RS 2026 Easter Fri–Mon off', ['2026-04-10', '2026-04-11', '2026-04-12', '2026-04-13', '2026-04-14'].map(rsOff), [true, true, true, true, false]);
+eq('RS 2026 Sretenje: Feb 15 Sun → Feb 17', ['2026-02-16', '2026-02-17', '2026-02-18'].map(rsOff), [true, true, false]);
+eq('RS 2026 Jan', ['2026-01-01', '2026-01-02', '2026-01-05', '2026-01-07', '2026-01-08'].map(rsOff), [true, true, false, true, false]);
+eq('RS 2026 May 2 Sat not moved', rsOff('2026-05-04'), false);
+eq('RS 2026 Nov 11', rsOff('2026-11-11'), true);
+eq('RS 2023 Jan 1 Sun → Jan 3', ['2023-01-02', '2023-01-03', '2023-01-04'].map(rsOff), [true, true, false]);
+eq('RS 2021 May 2 Sun + Easter → May 4', ['2021-04-30', '2021-05-03', '2021-05-04', '2021-05-05'].map(rsOff), [true, true, true, false]);
+eq('RS 2027 same as 2021', ['2027-04-30', '2027-05-03', '2027-05-04', '2027-05-05'].map(rsOff), [true, true, true, false]);
+eq('RS 2025 Feb 17', rsOff('2025-02-17'), true);
+eq('RS Vidovdan is working, marked', [rsOff('2026-06-29'), rs.info(parseYmd('2027-06-28')).observance], [false, 'Видовдан']);
+eq('RS May 9 working', rsOff('2025-05-09'), false);
+eq('RS payday Jan 2027', ymd(paydayIn(rs, 2027, 0, defaultState().paydays[0])), '2027-01-05');
+eq('RS payday Apr 2026 (no shift)', ymd(paydayIn(rs, 2026, 3, defaultState().paydays[0])), '2026-04-03');
+eq('RS kind transfer', rs.info(parseYmd('2026-02-17')).kind, 'transfer');
+eq('RS next holiday from Nov 19', [ymd(nextHoliday(rs, parseYmd('2026-11-19')).date), nextHoliday(rs, parseYmd('2026-11-19')).name], ['2027-01-01', 'Новый год']);
+eq('v1 data migrates ru → rs', normalize({ v: 1, settings: { country: 'ru' } }).settings.country, 'rs');
+eq('v2 keeps ru', normalize({ v: 2, settings: { country: 'ru' } }).settings.country, 'ru');
+eq('v1 keeps none', normalize({ v: 1, settings: { country: 'none' } }).settings.country, 'none');
+
+// Russia
 const st = defaultState();
+st.settings.country = 'ru';
 const cal = makeCal(st);
 const off = (s) => cal.info(parseYmd(s)).off;
 const pay = st.paydays[0];

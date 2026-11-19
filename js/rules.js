@@ -3,6 +3,8 @@ import {
   ymd, mdOf, parseYmd, startOfDay, addDays, daysInMonth, dayDiff, isWeekend, withTime, plural, days,
 } from './dates.js';
 
+// ---------- Россия ----------
+
 // Нерабочие праздничные дни РФ (ст. 112 ТК РФ)
 export const RU_HOLIDAYS = {
   '01-01': 'Новый год',
@@ -28,30 +30,97 @@ const RU_DECREES = {
   2026: { off: ['01-09', '03-09', '05-11', '12-31'], work: [] },
 };
 
+function ruYear(y) {
+  const holidays = new Map(Object.entries(RU_HOLIDAYS));
+  const dec = RU_DECREES[y];
+  if (dec) {
+    return { holidays, off: new Set(dec.off), work: new Set(dec.work), observances: new Map(), official: true };
+  }
+  // No decree known: apply the Labour Code rule — a holiday falling on a weekend moves to
+  // the next working day. January weekends are moved by a yearly decree; we can't know it.
+  const off = new Set();
+  for (const md of holidays.keys()) {
+    if (md.startsWith('01-')) continue;
+    const d = parseYmd(`${y}-${md}`);
+    if (!isWeekend(d)) continue;
+    let n = addDays(d, 1);
+    while (isWeekend(n) || holidays.has(mdOf(n)) || off.has(mdOf(n))) n = addDays(n, 1);
+    off.add(mdOf(n));
+  }
+  return { holidays, off, work: new Set(), observances: new Map(), official: false };
+}
+
+// ---------- Сербия ----------
+// Закон о государственных и других праздниках в Республике Сербия.
+
+/** Orthodox Easter (Gregorian date): Julian computus + 13 days, valid 1900–2099. */
+export function orthodoxEaster(y) {
+  const a = y % 4;
+  const b = y % 7;
+  const c = y % 19;
+  const d = (19 * c + 15) % 30;
+  const e = (2 * a + 4 * b - d + 34) % 7;
+  const month = Math.floor((d + e + 114) / 31);
+  const day = ((d + e + 114) % 31) + 1;
+  return new Date(y, month - 1, day + 13);
+}
+
+// State holidays: when one of their days falls on a Sunday, the first next working day is off.
+const RS_STATE = [
+  ['01-01', 'Новый год'],
+  ['01-02', 'Новый год'],
+  ['02-15', 'Сретение — День государственности'],
+  ['02-16', 'Сретение — День государственности'],
+  ['05-01', 'Праздник труда'],
+  ['05-02', 'Праздник труда'],
+  ['11-11', 'День перемирия'],
+];
+// Religious holidays (Orthodox): days off, never moved.
+const RS_RELIGIOUS = [['01-07', 'Рождество Христово (Божич)']];
+const RS_EASTER = [[-2, 'Великая пятница'], [-1, 'Великая суббота'], [0, 'Пасха (Васкрс)'], [1, 'Пасхальный понедельник']];
+// Marked, but working days.
+const RS_OBSERVANCES = {
+  '01-27': 'Савиндан',
+  '04-22': 'День памяти жертв Холокоста и фашизма',
+  '05-09': 'День Победы',
+  '06-28': 'Видовдан',
+  '10-21': 'День памяти сербских жертв Второй мировой войны',
+};
+
+function rsYear(y) {
+  const holidays = new Map();
+  const add = (md, name) => {
+    const cur = holidays.get(md);
+    holidays.set(md, cur && cur !== name ? `${cur} · ${name}` : name);
+  };
+  for (const [md, name] of RS_STATE) add(md, name);
+  for (const [md, name] of RS_RELIGIOUS) add(md, name);
+  const easter = orthodoxEaster(y);
+  for (const [k, name] of RS_EASTER) add(mdOf(addDays(easter, k)), name);
+
+  const off = new Set();
+  for (const [md] of RS_STATE) {
+    const d = parseYmd(`${y}-${md}`);
+    if (d.getDay() !== 0) continue;
+    let n = addDays(d, 1);
+    while (isWeekend(n) || holidays.has(mdOf(n)) || off.has(mdOf(n))) n = addDays(n, 1);
+    off.add(mdOf(n));
+  }
+  return { holidays, off, work: new Set(), observances: new Map(Object.entries(RS_OBSERVANCES)), official: true };
+}
+
+// ---------- Общее ----------
+
+export const COUNTRIES = { rs: 'Сербия', ru: 'Россия', none: 'Только сб и вс' };
+const YEAR_FN = { rs: rsYear, ru: ruYear };
 const yearCache = new Map();
 
-function ruYear(y) {
-  if (yearCache.has(y)) return yearCache.get(y);
-  const dec = RU_DECREES[y];
-  let r;
-  if (dec) {
-    r = { off: new Set(dec.off), work: new Set(dec.work), official: true };
-  } else {
-    // No decree known: apply the Labour Code rule — a holiday falling on a weekend moves to
-    // the next working day. January weekends are moved by a yearly decree; we can't know it.
-    const off = new Set();
-    for (const md of Object.keys(RU_HOLIDAYS)) {
-      if (md.startsWith('01-')) continue;
-      const d = parseYmd(`${y}-${md}`);
-      if (!isWeekend(d)) continue;
-      let n = addDays(d, 1);
-      while (isWeekend(n) || RU_HOLIDAYS[mdOf(n)] || off.has(mdOf(n))) n = addDays(n, 1);
-      off.add(mdOf(n));
-    }
-    r = { off, work: new Set(), official: false };
-  }
-  yearCache.set(y, r);
-  return r;
+function yearData(country, y) {
+  const fn = YEAR_FN[country];
+  if (!fn) return null;
+  const k = `${country}:${y}`;
+  if (!yearCache.has(k)) yearCache.set(k, fn(y));
+  return yearCache.get(k);
 }
 
 export function dayInfo(d, settings, overrides) {
@@ -62,12 +131,14 @@ export function dayInfo(d, settings, overrides) {
   let transfer = false;
   let workWeekend = false;
   let estimated = false;
-  if (settings.country === 'ru') {
-    holiday = RU_HOLIDAYS[md] || null;
-    const yr = ruYear(d.getFullYear());
+  let observance = null;
+  const yr = yearData(settings.country, d.getFullYear());
+  if (yr) {
+    holiday = yr.holidays.get(md) || null;
     transfer = !holiday && yr.off.has(md);
     workWeekend = yr.work.has(md);
     estimated = !yr.official;
+    observance = yr.observances.get(md) || null;
   }
   const base = !!holiday || transfer || (wknd && !workWeekend);
   const ov = (overrides && overrides[key]) || null;
@@ -78,7 +149,7 @@ export function dayInfo(d, settings, overrides) {
   else if (transfer) kind = 'transfer';
   else if (workWeekend) kind = 'work-weekend';
   else kind = wknd ? 'weekend' : 'work';
-  return { key, date: startOfDay(d), off, base, holiday, kind, override: ov, estimated };
+  return { key, date: startOfDay(d), off, base, holiday, observance, kind, override: ov, estimated };
 }
 
 export function kindLabel(i) {
@@ -127,7 +198,7 @@ export function countWorkDays(cal, from, to) {
 }
 
 export function nextHoliday(cal, from) {
-  if (cal.state.settings.country !== 'ru') return null;
+  if (!YEAR_FN[cal.state.settings.country]) return null;
   const today = startOfDay(from);
   for (let i = 0; i < 400; i++) {
     const d = addDays(today, i);

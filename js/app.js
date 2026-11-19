@@ -4,14 +4,14 @@ import {
 } from './dates.js';
 import {
   makeCal, kindLabel, buildCountdowns, eventDatesInRange, nextOccurrence, paydaysInRange, countWorkDays,
-  offBlock,
+  offBlock, COUNTRIES,
 } from './rules.js';
 import {
   load, save, normalize, defaultState, encodeShare, decodeShare, mergeStates, shareUrl, newId,
   sanitizeEvent, COLORS, STORAGE_KEY, SHARE_PARAM,
 } from './store.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 let state = load();
 let cal = makeCal(state);
@@ -251,7 +251,8 @@ function renderMonth() {
       const dots = mk.slice(0, 4).map((x) => (x.kind === 'pay' ? '<i class="dot-pay">₽</i>' : `<i style="--c:${x.color}"></i>`)).join('');
       html += `<button class="${cls.join(' ')}" data-day="${inf.key}" aria-label="${esc(label)}"${inf.key === selKey ? ' aria-pressed="true"' : ''}>
         <span class="c-num">${d.getDate()}</span>
-        ${inf.holiday && inf.off ? `<span class="c-hol">${esc(inf.holiday)}</span>` : ''}
+        ${inf.holiday && inf.off ? `<span class="c-hol">${esc(inf.holiday)}</span>`
+    : inf.observance ? `<span class="c-hol c-obs">${esc(inf.observance)}</span>` : ''}
         ${mk.length ? `<span class="c-chips">${chips}</span><span class="c-dots">${dots}</span>` : ''}
       </button>`;
     }
@@ -259,7 +260,7 @@ function renderMonth() {
   $('#grid').innerHTML = html;
   const off = dim - work;
   let stats = `${work} ${plural(work, 'рабочий день', 'рабочих дня', 'рабочих дней')} · ${off} ${plural(off, 'выходной', 'выходных', 'выходных')}`;
-  if (s.country === 'ru' && estimated) stats += ' · переносы на этот год ещё не внесены';
+  if (estimated) stats += ' · переносы на этот год ещё не внесены';
   setText($('#mStats'), stats);
 }
 
@@ -275,6 +276,9 @@ function renderDay() {
   if (inf.holiday && inf.off) {
     const blk = offBlock(cal, d);
     items.push(`<li><span class="cd-ico">🎉</span><span class="cd-main"><span class="cd-title">${esc(inf.holiday)}</span>${blk.len > 1 ? `<span class="cd-sub">отдыхаем ${fmtRange(blk.start, blk.end, now)}, ${days(blk.len)}</span>` : ''}</span></li>`);
+  }
+  if (inf.observance) {
+    items.push(`<li><span class="cd-ico">📌</span><span class="cd-main"><span class="cd-title">${esc(inf.observance)}</span><span class="cd-sub">памятный день, рабочий</span></span></li>`);
   }
   for (const p of state.paydays) {
     for (const hit of paydaysInRange(cal, p, d, d)) {
@@ -460,8 +464,7 @@ function renderSettings() {
     <div class="row2">
       <label class="fld"><span>Праздники и переносы</span>
         <select data-s="country">
-          <option value="ru"${s.country === 'ru' ? ' selected' : ''}>Россия</option>
-          <option value="none"${s.country === 'none' ? ' selected' : ''}>Только сб и вс</option>
+          ${Object.entries(COUNTRIES).map(([k, v]) => `<option value="${k}"${s.country === k ? ' selected' : ''}>${v}</option>`).join('')}
         </select>
       </label>
       <label class="fld"><span>Тема</span>
