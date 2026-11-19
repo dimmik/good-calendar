@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Удобный календарь</title>
+  <meta name="description" content="Сегодня, месяц и отсчёты до событий, выходных и зарплаты">
+  <meta name="theme-color" content="#f4f4f1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Календарь">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="pwa.json">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/app.css">
+  <script src="js/boot.js"></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <img src="icons/icon.svg" alt="" width="28" height="28">
+      <span>Календарь</span>
+    </div>
+    <div class="top-actions">
+      <button class="btn small" id="installBtn" hidden>Установить</button>
+      <button class="btn small" id="addBtn" title="Новое событие (N)">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="hide-xs">Событие</span>
+      </button>
+      <button class="icon-btn" id="shareBtn" title="Поделиться ссылкой" aria-label="Поделиться ссылкой">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>
+      </button>
+      <button class="icon-btn" id="settingsBtn" title="Настройки" aria-label="Настройки">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <div class="col-a">
+      <section class="card today" id="today" aria-label="Сегодня"></section>
+      <section class="card countdowns" aria-labelledby="cdTitle">
+        <div class="card-head">
+          <h2 id="cdTitle">Сколько осталось</h2>
+          <button class="btn small ghost" data-act="new-event">+ Событие</button>
+        </div>
+        <ul class="cd-list" id="cdList"></ul>
+        <details class="events-all" id="eventsAll">
+          <summary>Мои события <span class="muted" id="evCount"></span></summary>
+          <ul class="ev-list" id="evList"></ul>
+        </details>
+      </section>
+    </div>
+
+    <section class="card month" aria-labelledby="mTitle">
+      <div class="month-head">
+        <h2 id="mTitle"></h2>
+        <div class="month-nav">
+          <button class="icon-btn" data-act="prev" aria-label="Предыдущий месяц" title="Предыдущий месяц (←)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <button class="btn small" data-act="today" title="Сегодня (T)">Сегодня</button>
+          <button class="icon-btn" data-act="next" aria-label="Следующий месяц" title="Следующий месяц (→)">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="dow" id="dow"></div>
+      <div class="grid" id="grid" role="grid"></div>
+      <div class="month-foot muted" id="mStats"></div>
+    </section>
+
+    <section class="card day" id="day" aria-live="polite"></section>
+  </main>
+
+  <dialog class="sheet" id="evDlg">
+    <form id="evForm" method="dialog" autocomplete="off">
+      <h2 id="evDlgTitle">Новое событие</h2>
+      <label class="fld"><span>Название</span><input name="title" required maxlength="120" placeholder="Например, отпуск"></label>
+      <div class="row2">
+        <label class="fld"><span>Дата</span><input type="date" name="date" required></label>
+        <label class="fld"><span>Время <em>необязательно</em></span><input type="time" name="time"></label>
+      </div>
+      <label class="fld"><span>Повтор</span>
+        <select name="repeat">
+          <option value="none">Не повторять</option>
+          <option value="yearly">Каждый год</option>
+          <option value="monthly">Каждый месяц</option>
+          <option value="weekly">Каждую неделю</option>
+        </select>
+      </label>
+      <div class="fld"><span>Цвет и значок</span>
+        <div class="colors-row"><div class="colors" id="evColors"></div><input class="emoji-in" name="emoji" maxlength="16" placeholder="🙂" aria-label="Значок (эмодзи)"></div>
+      </div>
+      <label class="chk"><input type="checkbox" name="countdown" checked> Показывать в «Сколько осталось»</label>
+      <div class="dlg-actions">
+        <button type="button" class="btn ghost danger" id="evDelete">Удалить</button>
+        <span class="sp"></span>
+        <button type="button" class="btn" data-close>Отмена</button>
+        <button type="submit" class="btn primary">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="sheet" id="setDlg">
+    <div class="dlg-body" id="setBody"></div>
+  </dialog>
+
+  <dialog class="sheet" id="shareDlg">
+    <div class="dlg-body">
+      <h2>Перенести на другое устройство</h2>
+      <p class="muted">Откройте эту ссылку на телефоне или другом компьютере — события и настройки применятся там. Можно отсканировать QR-код камерой.</p>
+      <div class="qr" id="qr"></div>
+      <div class="linkrow">
+        <input id="shareLink" readonly aria-label="Ссылка">
+        <button class="btn primary" id="copyLink">Копировать</button>
+      </div>
+      <p class="muted small" id="shareSize"></p>
+      <div class="dlg-actions">
+        <button class="btn" id="nativeShare" hidden>Отправить…</button>
+        <span class="sp"></span>
+        <button class="btn" data-close>Готово</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="sheet" id="impDlg">
+    <div class="dlg-body">
+      <h2>Применить данные из ссылки?</h2>
+      <p id="impSummary"></p>
+      <p class="muted small"><b>Объединить</b> — добавит и обновит события из ссылки, ваши остальные останутся.<br><b>Заменить</b> — сделает всё точно как в ссылке.</p>
+      <div class="dlg-actions">
+        <button class="btn" data-close>Отмена</button>
+        <span class="sp"></span>
+        <button class="btn" id="impReplace">Заменить</button>
+        <button class="btn primary" id="impMerge">Объединить</button>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

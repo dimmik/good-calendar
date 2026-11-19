@@ -1,0 +1,103 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Tests</title>
+<pre id="out">running…</pre>
+<script type="module">
+import { ymd, parseYmd, isoWeek, plural } from '../js/dates.js';
+import { makeCal, dayInfo, nextPayday, paydayIn, eventDatesInRange, nextOccurrence, buildCountdowns, countWorkDays, nextHoliday } from '../js/rules.js';
+import { defaultState, normalize, encodeShare, decodeShare, mergeStates } from '../js/store.js';
+
+const results = [];
+const eq = (name, got, want) => results.push([JSON.stringify(got) === JSON.stringify(want), name, got, want]);
+
+const st = defaultState();
+const cal = makeCal(st);
+const off = (s) => cal.info(parseYmd(s)).off;
+const pay = st.paydays[0];
+
+// Production calendar
+eq('2026-11-19 work', off('2026-11-19'), false);
+eq('2026-01-09 transfer', off('2026-01-09'), true);
+eq('2026-01-12 work', off('2026-01-12'), false);
+eq('2026-03-09 off', off('2026-03-09'), true);
+eq('2026-05-11 off', off('2026-05-11'), true);
+eq('2026-06-12 off', off('2026-06-12'), true);
+eq('2026-12-31 off', off('2026-12-31'), true);
+eq('2026-12-30 work', off('2026-12-30'), false);
+eq('2025-11-01 working saturday', off('2025-11-01'), false);
+eq('2025-11-03 off', off('2025-11-03'), true);
+eq('2025-05-08 off', off('2025-05-08'), true);
+eq('2025-03-10 work', off('2025-03-10'), false);
+eq('2027-05-03 fallback transfer', off('2027-05-03'), true);
+eq('2027-05-10 fallback transfer', off('2027-05-10'), true);
+eq('2027-06-14 fallback transfer', off('2027-06-14'), true);
+eq('2027-05-04 work', off('2027-05-04'), false);
+eq('2027 estimated', cal.info(parseYmd('2027-03-01')).estimated, true);
+
+// Paydays
+eq('payday Nov 2026', ymd(paydayIn(cal, 2026, 10, pay)), '2026-11-05');
+eq('payday Dec 2026 (5th is Sat)', ymd(paydayIn(cal, 2026, 11, pay)), '2026-12-04');
+eq('payday Jan 2027 → Dec 30', ymd(paydayIn(cal, 2027, 0, pay)), '2026-12-30');
+eq('next payday from 2026-11-19', ymd(nextPayday(cal, pay, parseYmd('2026-11-19')).date), '2026-12-04');
+eq('next payday from 2026-12-05', ymd(nextPayday(cal, pay, parseYmd('2026-12-05')).date), '2026-12-30');
+eq('payday after', ymd(paydayIn(cal, 2026, 11, { day: 5, shift: 'after' })), '2026-12-07');
+eq('payday 31 in Feb', ymd(paydayIn(cal, 2026, 1, { day: 31, shift: 'none' })), '2026-02-28');
+
+// Events
+const yearly = { id: 'a', title: 'Л', date: '2024-02-29', time: '', repeat: 'yearly' };
+eq('yearly Feb29 → Feb28', eventDatesInRange(yearly, parseYmd('2027-01-01'), parseYmd('2027-12-31')).map(ymd), ['2027-02-28']);
+const monthly = { id: 'b', title: 'M', date: '2026-01-31', time: '', repeat: 'monthly' };
+eq('monthly 31st', eventDatesInRange(monthly, parseYmd('2026-02-01'), parseYmd('2026-04-30')).map(ymd), ['2026-02-28', '2026-03-31', '2026-04-30']);
+const weekly = { id: 'c', title: 'W', date: '2026-11-02', time: '19:00', repeat: 'weekly' };
+eq('weekly', eventDatesInRange(weekly, parseYmd('2026-11-18'), parseYmd('2026-11-30')).map(ymd), ['2026-11-23', '2026-11-30']);
+eq('weekly before start', eventDatesInRange(weekly, parseYmd('2026-10-01'), parseYmd('2026-11-05')).map(ymd), ['2026-11-02']);
+const timed = { id: 'd', title: 'T', date: '2026-11-19', time: '10:00', repeat: 'none' };
+eq('timed past today → null', nextOccurrence(timed, new Date(2026, 10, 19, 12, 0)), null);
+eq('timed future today', ymd(nextOccurrence(timed, new Date(2026, 10, 19, 9, 0)).day), '2026-11-19');
+const allDay = { id: 'e', title: 'A', date: '2026-11-19', time: '', repeat: 'none' };
+eq('all-day today stays', ymd(nextOccurrence(allDay, new Date(2026, 10, 19, 23, 0)).day), '2026-11-19');
+const wtimed = { ...weekly, date: '2026-11-19', time: '10:00' };
+eq('weekly timed past → next week', ymd(nextOccurrence(wtimed, new Date(2026, 10, 19, 12)).day), '2026-11-26');
+
+// Misc
+eq('isoWeek 2026-11-19', isoWeek(parseYmd('2026-11-19')), 47);
+eq('isoWeek 2027-01-01', isoWeek(parseYmd('2027-01-01')), 53);
+eq('plural', [1, 2, 5, 11, 21, 22].map((n) => plural(n, 'день', 'дня', 'дней')), ['день', 'дня', 'дней', 'дней', 'день', 'дня']);
+eq('work days Dec 2026', countWorkDays(cal, parseYmd('2026-12-01'), parseYmd('2027-01-01')), 22);
+eq('next holiday from Nov 19', ymd(nextHoliday(cal, parseYmd('2026-11-19')).date), '2027-01-01');
+eq('NY block 2026', (() => { const h = nextHoliday(cal, parseYmd('2025-12-20')); return [ymd(h.block.start), ymd(h.block.end)]; })(), ['2025-12-31', '2026-01-11']);
+
+// Overrides
+const st2 = defaultState();
+st2.overrides['2026-12-04'] = 'off';
+eq('override shifts payday', ymd(paydayIn(makeCal(st2), 2026, 11, pay)), '2026-12-03');
+eq('country none', dayInfo(parseYmd('2026-01-05'), { country: 'none' }, {}).off, false);
+
+// Countdowns
+const st3 = defaultState();
+st3.events.push({ id: 'x1', title: 'Отпуск', date: '2026-12-20', time: '', repeat: 'none', color: '#4f5bd5', emoji: '🌴', countdown: true, u: 1 });
+const rows = buildCountdowns(makeCal(st3), new Date(2026, 10, 19, 14, 30));
+eq('countdown ids', rows.map((r) => r.id), ['workday', 'weekend', 'pay:salary', 'ev:x1', 'holiday']);
+eq('work days left during workday', rows.find((r) => r.id === 'weekend').workDays, 2);
+const evening = buildCountdowns(makeCal(st3), new Date(2026, 10, 19, 19, 0));
+eq('work days left after work', evening.find((r) => r.id === 'weekend').workDays, 1);
+const sat = buildCountdowns(makeCal(st3), new Date(2026, 10, 21, 12, 0));
+eq('weekend row on Saturday', sat.find((r) => r.id === 'weekend').kind, 'rest');
+
+// Share + merge
+const code = await encodeShare(st3);
+const back = await decodeShare(`https://x.test/good-calendar/#import=${code}`);
+eq('share roundtrip', back.events, st3.events);
+eq('share code prefix', code.slice(0, 2), typeof CompressionStream === 'function' ? '1z' : '1j');
+const mine = normalize({ events: [{ id: 'k1', title: 'old', date: '2026-12-01', u: 5 }, { id: 'k2', title: 'keep', date: '2026-12-02', u: 5 }] });
+const inc = normalize({ events: [{ id: 'k1', title: 'new', date: '2026-12-01', u: 9 }], deleted: { k2: 10 } });
+eq('merge', mergeStates(mine, inc).events.map((e) => e.title), ['new']);
+eq('sanitize drops junk', normalize({ events: [{ id: '<x>', title: 'a', date: '2026-01-01' }, { id: 'ok', title: '', date: '2026-01-01' }] }).events.length, 0);
+let threw = false;
+try { await decodeShare('garbage'); } catch { threw = true; }
+eq('bad code throws', threw, true);
+
+const fails = results.filter((r) => !r[0]);
+document.getElementById('out').textContent = `${results.length - fails.length}/${results.length} passed\n`
+  + fails.map((f) => `FAIL ${f[1]}: got ${JSON.stringify(f[2])}, want ${JSON.stringify(f[3])}`).join('\n');
+</script>
