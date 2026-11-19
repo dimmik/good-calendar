@@ -32,7 +32,10 @@ eq('RS kind transfer', rs.info(parseYmd('2026-02-17')).kind, 'transfer');
 eq('RS next holiday from Nov 19', [ymd(nextHoliday(rs, parseYmd('2026-11-19')).date), nextHoliday(rs, parseYmd('2026-11-19')).name], ['2027-01-01', 'Новый год']);
 eq('v1 data migrates ru → rs', normalize({ v: 1, settings: { country: 'ru' } }).settings.country, 'rs');
 eq('v2 keeps ru', normalize({ v: 2, settings: { country: 'ru' } }).settings.country, 'ru');
-eq('v1 keeps none', normalize({ v: 1, settings: { country: 'none' } }).settings.country, 'none');
+eq('clock off by default', defaultState().settings.analogClock, false);
+eq('v2 clock on → off', normalize({ v: 2, settings: { analogClock: true } }).settings.analogClock, false);
+eq('v3 clock on stays on', normalize({ v: 3, settings: { analogClock: true } }).settings.analogClock, true);
+eq('v1 keeps none',normalize({ v: 1, settings: { country: 'none' } }).settings.country, 'none');
 
 // Russia
 const st = defaultState();

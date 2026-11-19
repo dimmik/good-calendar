@@ -9,7 +9,7 @@ const BUILTINS = ['payday', 'weekend', 'workday', 'holiday', 'newyear'];
 
 export function defaultState() {
   return {
-    v: 2,
+    v: 3,
     events: [],
     paydays: [{ id: 'salary', title: 'Зарплата', day: 5, shift: 'before', u: 0 }],
     overrides: {},
@@ -20,7 +20,7 @@ export function defaultState() {
       workEnd: '18:00',
       builtins: { payday: true, weekend: true, workday: true, holiday: true, newyear: true },
       weekNumbers: false,
-      analogClock: true,
+      analogClock: false,
       theme: 'auto',
     },
   };
@@ -90,7 +90,8 @@ export function normalize(raw) {
   if (isStr(s.workStart, 5) && reTime.test(s.workStart)) settings.workStart = s.workStart;
   if (isStr(s.workEnd, 5) && reTime.test(s.workEnd)) settings.workEnd = s.workEnd;
   if (typeof s.weekNumbers === 'boolean') settings.weekNumbers = s.weekNumbers;
-  if (typeof s.analogClock === 'boolean') settings.analogClock = s.analogClock;
+  // The clock was on by default in v2 (1.4.0); from v3 it is off unless turned on again.
+  if (typeof s.analogClock === 'boolean' && raw.v >= 3) settings.analogClock = s.analogClock;
   if (['auto', 'light', 'dark'].includes(s.theme)) settings.theme = s.theme;
   settings.builtins = { ...d.settings.builtins };
   if (s.builtins && typeof s.builtins === 'object') {
@@ -112,7 +113,7 @@ export function normalize(raw) {
     ent.sort((a, b) => b[1] - a[1]);
     for (const [k, v] of ent.slice(0, 200)) deleted[k] = v;
   }
-  return { v: 2, events, paydays, overrides, deleted, settings };
+  return { v: 3, events, paydays, overrides, deleted, settings };
 }
 
 export function load() {
@@ -150,7 +151,7 @@ export function mergeStates(mine, inc) {
     return [...m.values()].filter((x) => !(deleted[x.id] && deleted[x.id] >= (x.u || 0)));
   };
   return normalize({
-    v: 2,
+    v: 3,
     events: mergeList(mine.events, inc.events),
     paydays: mergeList(mine.paydays, inc.paydays),
     overrides: { ...mine.overrides, ...inc.overrides },
@@ -185,7 +186,7 @@ export const SHARE_PARAM = 'import';
 
 export async function encodeShare(state) {
   const { events, paydays, overrides, deleted, settings } = state;
-  const json = JSON.stringify({ v: 2, events, paydays, overrides, deleted, settings });
+  const json = JSON.stringify({ v: 3, events, paydays, overrides, deleted, settings });
   const bytes = new TextEncoder().encode(json);
   if (typeof CompressionStream === 'function') {
     try {

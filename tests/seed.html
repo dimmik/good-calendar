@@ -10,7 +10,7 @@
     return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
   }
   var state = {
-    v: 2,
+    v: 3,
     events: [
       { id: 'demo1', title: 'Отпуск в горах', date: d(31), time: '', repeat: 'none', color: '#2f9e5b', emoji: '🏔️', countdown: true, u: 1 },
       { id: 'demo2', title: 'День рождения мамы', date: '1961-' + d(9).slice(5), time: '', repeat: 'yearly', color: '#c64fbf', emoji: '🎂', countdown: true, u: 1 },
