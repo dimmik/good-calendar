@@ -1,11 +1,12 @@
 // Network first (always fresh when online), cache as offline fallback.
-const CACHE = 'good-calendar-v2';
+const CACHE = 'good-calendar-v3';
 const ASSETS = [
   './',
   'index.html',
   'css/app.css',
   'js/boot.js',
   'js/app.js',
+  'js/version.js',
   'js/dates.js',
   'js/rules.js',
   'js/store.js',
@@ -35,6 +36,7 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
   if (url.origin !== location.origin) return;
+  if (url.searchParams.has('check')) return; // update checks go straight to the network, never cached
   e.respondWith((async () => {
     const cache = await caches.open(CACHE);
     try {

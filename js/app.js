@@ -11,7 +11,7 @@ import {
   sanitizeEvent, COLORS, STORAGE_KEY, SHARE_PARAM,
 } from './store.js';
 
-const VERSION = '1.2.0';
+import { VERSION } from './version.js';
 
 let state = load();
 let cal = makeCal(state);
@@ -843,9 +843,94 @@ function tick() {
   timer = setTimeout(tick, 1000 - (Date.now() % 1000) + 20);
 }
 
-document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  tick();
+  checkForUpdate();
+});
+
+// ---------- Full screen ----------
+
+const fsElement = () => document.fullscreenElement || document.webkitFullscreenElement || null;
+const fsSupported = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+
+function toggleFullscreen() {
+  const el = document.documentElement;
+  if (fsElement()) (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+  else {
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    Promise.resolve(req.call(el, { navigationUI: 'hide' })).catch(() => toast('Браузер не разрешил полный экран'));
+  }
+}
+
+function updateFsBtn() {
+  const on = !!fsElement();
+  const b = $('#fsBtn');
+  b.querySelector('.fs-on').hidden = on;
+  b.querySelector('.fs-off').hidden = !on;
+  b.title = on ? 'Выйти из полного экрана (F)' : 'На весь экран (F)';
+  b.setAttribute('aria-label', on ? 'Выйти из полного экрана' : 'На весь экран');
+}
+
+$('#fsBtn').hidden = !fsSupported;
+$('#fsBtn').addEventListener('click', toggleFullscreen);
+document.addEventListener('fullscreenchange', updateFsBtn);
+document.addEventListener('webkitfullscreenchange', updateFsBtn);
+document.addEventListener('keydown', (e) => {
+  if (!fsSupported || document.querySelector('dialog[open]')) return;
+  if (e.target.closest('input, select, textarea') || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'f' || e.key === 'а') toggleFullscreen();
+});
+
+// ---------- Updates ----------
+// The server's js/version.js is compared with the running one; a newer one is offered.
+
+const verNum = (v) => String(v).split('.').map((x) => parseInt(x, 10) || 0);
+function isNewer(a, b) {
+  const x = verNum(a);
+  const y = verNum(b);
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+  }
+  return false;
+}
+
+let lastCheck = 0;
+let dismissed = '';
+
+async function checkForUpdate(force = false) {
+  if (!force && Date.now() - lastCheck < 5 * 60e3) return;
+  if (!navigator.onLine) return;
+  lastCheck = Date.now();
+  try {
+    const res = await fetch(`js/version.js?check=${Date.now()}`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const m = (await res.text()).match(/VERSION\s*=\s*'([\d.]+)'/);
+    if (!m || !isNewer(m[1], VERSION) || m[1] === dismissed) return;
+    setText($('#updateText'), `Новая версия ${m[1]}`);
+    $('#updateBar').hidden = false;
+    $('#updateBar').dataset.ver = m[1];
+  } catch { /* offline or blocked: try later */ }
+}
+
+$('#updateBtn').addEventListener('click', async () => {
+  $('#updateBtn').disabled = true;
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    await reg?.update();
+  } catch { /* reload anyway */ }
+  location.reload();
+});
+$('#updateClose').addEventListener('click', () => {
+  dismissed = $('#updateBar').dataset.ver || '';
+  $('#updateBar').hidden = true;
+});
+setInterval(() => checkForUpdate(true), 30 * 60e3);
+window.addEventListener('online', () => checkForUpdate(true));
 
 renderAll();
 updateInstallBtn();
+updateFsBtn();
 tick();
 checkHash();
+setTimeout(() => checkForUpdate(true), 3000);
