@@ -161,7 +161,7 @@ function tickToday() {
     const left = z - now;
     let right;
     if (el.dataset.bar === 'work') {
-      right = now < a ? `начало в ${s.workStart}` : left <= 0 ? 'закончился' : `ещё ${remainText(left)}`;
+      right = `${Math.floor(p * 100)}% · ${now < a ? `начало в ${s.workStart}` : left <= 0 ? 'закончился' : `ещё ${remainText(left)}`}`;
     } else {
       right = `${(p * 100).toFixed(el.dataset.bar === 'year' ? 1 : 0)}% · ещё ${remainText(left)}`;
     }
