@@ -149,7 +149,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 @media (min-width: 1400px) {
   .layout { grid-template-columns: 380px minmax(0, 1fr) 340px; }
   .col-a { grid-row: 1; }
-  .day { grid-column: 3; grid-row: 1; position: sticky; top: 72px; }
+  .day { grid-column: 3; grid-row: 1; position: sticky; top: calc(60px + env(safe-area-inset-top)); }
 }
 
 .card {
@@ -306,8 +306,16 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 }
 
 @media (min-width: 900px) {
-  .grid { gap: 6px; }
-  .cell { height: auto; min-height: 108px; align-items: stretch; padding: 6px; }
+  /* The month fits the window: week rows share the height that is left (top bar 56px,
+     4px above the cards, 16px below), never smaller than a usable minimum. */
+  .month {
+    display: flex; flex-direction: column;
+    height: calc(100vh - 76px - env(safe-area-inset-top));
+    height: calc(100dvh - 76px - env(safe-area-inset-top));
+    min-height: 520px;
+  }
+  .grid { flex: 1 1 0; min-height: 0; grid-auto-rows: minmax(0, 1fr); gap: 6px; }
+  .cell { height: auto; min-height: 0; align-items: stretch; padding: 6px; }
   .c-num { align-self: flex-start; }
   .c-dots { display: none; }
   .c-hol { display: block; font-size: 11px; line-height: 1.2; color: var(--off); margin: 2px 2px 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
@@ -325,7 +333,8 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 }
 
 @media (min-width: 1400px) {
-  .cell { min-height: 124px; }
+  /* three columns: the month stays in view while the left column scrolls */
+  .month { position: sticky; top: calc(60px + env(safe-area-inset-top)); }
 }
 
 /* ---------- Day panel ---------- */
