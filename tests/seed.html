@@ -22,7 +22,15 @@
       { id: 'salary', title: 'Зарплата', day: 5, shift: 'before', u: 0 },
       { id: 'adv', title: 'Аванс', day: 20, shift: 'before', u: 0 }
     ],
-    overrides: {},
+    overrides: (function () {
+      // one weekday made a day off and the next Saturday made a working day, to show both looks
+      var o = {}, i = 3;
+      while ([0, 6].indexOf(new Date(t.getFullYear(), t.getMonth(), t.getDate() + i).getDay()) >= 0) i++;
+      o[d(i)] = "off";
+      while (new Date(t.getFullYear(), t.getMonth(), t.getDate() + i).getDay() !== 6) i++;
+      o[d(i)] = "work";
+      return o;
+    })(),
     deleted: {},
     settings: { country: 'rs', workStart: '09:00', workEnd: '18:00', builtins: { payday: true, weekend: true, workday: true, holiday: true, newyear: true }, weekNumbers: false, theme: 'auto' }
   };

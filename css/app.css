@@ -10,6 +10,8 @@
   --accent-soft: #e9ebfc;
   --off: #cf3f37;
   --off-soft: #fcebe9;
+  --we-bg: #fcefed;
+  --hol-bg: #f9d9d4;
   --pay: #1e8e4e;
   --pay-soft: #e2f4e8;
   --shadow: 0 1px 2px rgba(20, 20, 30, .04), 0 6px 20px rgba(20, 20, 30, .05);
@@ -31,6 +33,8 @@
     --accent-soft: #262b52;
     --off: #ff7b71;
     --off-soft: #36201f;
+    --we-bg: #2a1e20;
+    --hol-bg: #432427;
     --pay: #52d18b;
     --pay-soft: #17311f;
     --shadow: none;
@@ -50,6 +54,8 @@
   --accent-soft: #262b52;
   --off: #ff7b71;
   --off-soft: #36201f;
+  --we-bg: #2a1e20;
+  --hol-bg: #432427;
   --pay: #52d18b;
   --pay-soft: #17311f;
   --shadow: none;
@@ -264,7 +270,8 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   font-weight: 600; font-variant-numeric: tabular-nums; font-size: 15px;
 }
 .cell.off .c-num { color: var(--off); }
-.cell.hol { background: var(--off-soft); }
+.cell.off { background: var(--we-bg); }
+.cell.hol { background: var(--hol-bg); }
 .cell.workwk .c-num { color: var(--text); text-decoration: underline dotted var(--muted); text-underline-offset: 3px; }
 .cell.out { opacity: .38; }
 .cell.today .c-num { background: var(--accent); color: var(--accent-ink); }
