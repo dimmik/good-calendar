@@ -12,6 +12,7 @@ import {
 } from './store.js';
 
 import { VERSION } from './version.js';
+import { pickTime } from './timepicker.js';
 
 let state = load();
 let cal = makeCal(state);
@@ -461,6 +462,7 @@ function openEvent(ev, date) {
   f.title.value = ev ? ev.title : '';
   f.date.value = ev ? ev.date : ymd(date || selected);
   f.time.value = ev ? ev.time : '';
+  showEvTime();
   f.repeat.value = ev ? ev.repeat : 'none';
   f.emoji.value = ev ? ev.emoji : '';
   f.countdown.checked = ev ? ev.countdown : true;
@@ -470,6 +472,22 @@ function openEvent(ev, date) {
   $('#evDlg').showModal();
   if (!ev) f.title.focus();
 }
+
+function showEvTime() {
+  const v = $('#evForm').time.value;
+  const b = $('#evTimeBtn');
+  b.textContent = v || 'весь день';
+  b.classList.toggle('empty', !v);
+}
+
+$('#evTimeBtn').addEventListener('click', async () => {
+  const f = $('#evForm');
+  const fallback = `${pad2(Math.min(23, now.getHours() + 1))}:00`;
+  const v = await pickTime(f.time.value, { allowEmpty: true, title: 'Время события', fallback });
+  if (v === null) return;
+  f.time.value = v;
+  showEvTime();
+});
 
 $('#evForm').addEventListener('submit', (e) => {
   e.preventDefault();
@@ -549,8 +567,8 @@ function renderSettings() {
 
     <h3>Рабочий день</h3>
     <div class="row2">
-      <label class="fld"><span>Начало</span><input type="time" data-s="workStart" value="${s.workStart}"></label>
-      <label class="fld"><span>Конец</span><input type="time" data-s="workEnd" value="${s.workEnd}"></label>
+      <label class="fld"><span>Начало</span><button type="button" class="time-field" data-time-s="workStart">${s.workStart}</button></label>
+      <label class="fld"><span>Конец</span><button type="button" class="time-field" data-time-s="workEnd">${s.workEnd}</button></label>
     </div>
 
     <h3>Календарь</h3>
@@ -627,6 +645,13 @@ $('#setBody').addEventListener('change', (e) => {
 });
 
 $('#setBody').addEventListener('click', async (e) => {
+  const tb = e.target.closest('[data-time-s]');
+  if (tb) {
+    const k = tb.dataset.timeS;
+    const v = await pickTime(state.settings[k], { title: k === 'workStart' ? 'Начало рабочего дня' : 'Конец рабочего дня' });
+    if (v) { state.settings[k] = v; commit(); }
+    return;
+  }
   const btn = e.target.closest('[data-act]');
   if (!btn) return;
   switch (btn.dataset.act) {

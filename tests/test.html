@@ -126,6 +126,38 @@ let threw = false;
 try { await decodeShare('garbage'); } catch { threw = true; }
 eq('bad code throws', threw, true);
 
+// Time picker: tap the dial like a user would
+const { pickTime } = await import('../js/timepicker.js');
+const tap = (svg, val, ring) => {
+  // val: 0..11 position on the dial, ring radius in viewBox units (outer 104, inner 68)
+  const r = svg.getBoundingClientRect();
+  const a = (val / 12) * Math.PI * 2;
+  const x = r.left + ((130 + Math.sin(a) * ring) / 260) * r.width;
+  const y = r.top + ((130 - Math.cos(a) * ring) / 260) * r.height;
+  for (const type of ['pointerdown', 'pointerup']) svg.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, pointerId: 1, bubbles: true }));
+};
+const tpRun = async (taps) => {
+  const p = pickTime('', { fallback: '09:00', allowEmpty: true });
+  const dlg = document.querySelector('dialog.tp-dlg');
+  const svg = dlg.querySelector('svg');
+  for (const [val, ring] of taps) tap(svg, val, ring);
+  dlg.querySelector('[data-tp="ok"]').click();
+  return p;
+};
+eq('picker 3 (outer) : 30', await tpRun([[3, 104], [6, 104]]), '03:30');
+eq('picker 15 (inner) : 45', await tpRun([[3, 68], [9, 104]]), '15:45');
+eq('picker 00 (inner top) : 05', await tpRun([[0, 68], [1, 104]]), '00:05');
+eq('picker 12 (outer top) : 00', await tpRun([[0, 104], [0, 104]]), '12:00');
+eq('picker untouched → fallback', await tpRun([]), '09:00');
+{
+  const p = pickTime('10:20', { allowEmpty: true });
+  document.querySelector('dialog.tp-dlg [data-tp="clear"]').click();
+  eq('picker clear', await p, '');
+  const q = pickTime('10:20');
+  document.querySelector('dialog.tp-dlg [data-tp="cancel"]').click();
+  eq('picker cancel', await q, null);
+}
+
 const fails = results.filter((r) => !r[0]);
 document.getElementById('out').textContent = `${results.length - fails.length}/${results.length} passed\n`
   + fails.map((f) => `FAIL ${f[1]}: got ${JSON.stringify(f[2])}, want ${JSON.stringify(f[3])}`).join('\n');
