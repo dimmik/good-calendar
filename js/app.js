@@ -322,6 +322,8 @@ function renderMonth() {
       if (inf.kind === 'work-weekend' || inf.kind === 'custom-work') cls.push('workwk');
       if (inf.override) cls.push('ovr');
       if (inf.key === todayKey) cls.push('today');
+      if (!inf.off && inf.key < todayKey) cls.push('past');
+      if (!inf.off && inf.key === todayKey) cls.push('wnow');
       if (inf.key === selKey) cls.push('sel');
       const label = `${d.getDate()} ${MONTHS_GEN[d.getMonth()]}, ${kindLabel(inf)}${mk.length ? `, ${mk.map((x) => x.title).join(', ')}` : ''}`;
       const chips = mk.slice(0, 3).map((x) => `<span class="chip-ev" style="--c:${x.color}">${x.emoji ? `${esc(x.emoji)} ` : ''}${x.time ? `<b>${x.time}</b> ` : ''}${esc(x.title)}</span>`).join('')
@@ -336,10 +338,23 @@ function renderMonth() {
     }
   }
   $('#grid').innerHTML = html;
+  tickTodayCell();
   const off = dim - work;
   let stats = `${work} ${plural(work, 'рабочий день', 'рабочих дня', 'рабочих дней')} · ${off} ${plural(off, 'выходной', 'выходных', 'выходных')}`;
   if (estimated) stats += ' · переносы на этот год ещё не внесены';
   setText($('#mStats'), stats);
+}
+
+/** Hatch today's working-day cell as far as the workday has gone. */
+function tickTodayCell() {
+  const cell = $('#grid .cell.wnow');
+  if (!cell) return;
+  const s = state.settings;
+  const a = withTime(now, s.workStart);
+  const z = withTime(now, s.workEnd);
+  const p = z > a ? Math.min(1, Math.max(0, (now - a) / (z - a))) : 0;
+  cell.style.setProperty('--wp', p.toFixed(4));
+  cell.classList.toggle('wdone', p >= 1);
 }
 
 // ---------- Selected day ----------
@@ -874,6 +889,7 @@ function tick() {
     renderAll();
   } else {
     tickToday();
+    tickTodayCell();
     renderCountdowns();
   }
   timer = setTimeout(tick, 1000 - (Date.now() % 1000) + 20);
