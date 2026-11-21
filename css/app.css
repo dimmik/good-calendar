@@ -113,6 +113,17 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   -webkit-tap-highlight-color: transparent;
 }
 .icon-btn:hover { background: var(--card2); }
+.icon-btn.warn { position: relative; }
+.icon-btn.warn::after {
+  content: ""; position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--off); box-shadow: 0 0 0 2px var(--bg);
+}
+
+/* Sync section in settings */
+.sync-status { margin: 0; color: var(--pay); font-weight: 550; }
+.sync-status.err { color: var(--off); }
+.sync-setup summary { cursor: pointer; font-weight: 600; font-size: 14px; padding: 4px 0; }
+.sync-form { display: grid; gap: 12px; margin-top: 10px; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 

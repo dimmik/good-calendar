@@ -1,0 +1,82 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Sync UI test</title>
+<pre id="out">running…</pre>
+<iframe id="app" src="../" width="420" height="900"></iframe>
+<script type="module">
+// Dev helper: drives the sync section of the settings in the real app.
+// Open as  tests/sync-ui.html#repo=owner/name&t=<token>  — uses a throwaway file under
+// _selftest/ and deletes it at the end. Never prints the token. Leaves sync switched off.
+const out = document.getElementById('out');
+const params = new URLSearchParams(location.hash.slice(1));
+history.replaceState(null, '', location.pathname);
+const repo = params.get('repo');
+const token = params.get('t');
+const path = `_selftest/ui-${Date.now()}.enc`;
+const results = [];
+const eq = (name, got, want) => results.push([JSON.stringify(got) === JSON.stringify(want), name, got, want]);
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const until = async (fn, ms = 20000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const v = fn(); if (v) return v; await wait(100); } return null; };
+
+const frame = document.getElementById('app');
+await new Promise((r) => frame.addEventListener('load', r, { once: true }));
+await wait(800);
+const d = frame.contentDocument;
+const w = frame.contentWindow;
+try {
+  w.localStorage.removeItem('good-calendar:sync');
+  d.getElementById('settingsBtn').click();
+  d.getElementById('syncRepo').value = repo;
+  d.getElementById('syncPath').value = path;
+  d.getElementById('syncToken').value = token;
+  d.querySelector('[data-act="sync-setup"]').click();
+  const st = await until(() => { const el = d.getElementById('syncStatus'); return el && /Синхронизировано|Не получилось/.test(el.textContent) && el.textContent; });
+  eq('status after setup', (st || '').replace(/\d\d:\d\d/, 'HH:MM'), 'Синхронизировано в HH:MM');
+  const cfg = JSON.parse(w.localStorage.getItem('good-calendar:sync') || 'null');
+  eq('config saved with path', cfg && cfg.path, path);
+  eq('settings button not flagged', d.getElementById('settingsBtn').classList.contains('warn'), false);
+
+  d.querySelector('[data-act="sync-pair"]').click();
+  await wait(300);
+  const link = d.getElementById('shareLink').value;
+  eq('pairing link shown', /#sync=[A-Za-z0-9_-]{100,}$/.test(link), true);
+  eq('pairing dialog title', d.getElementById('shareTitle').textContent, 'Подключить другое устройство');
+  d.getElementById('shareDlg').close();
+
+  // a change in the app is pushed after the debounce
+  const before = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' }).then((r) => r.json());
+  d.getElementById('setDlg').close();
+  d.getElementById('addBtn').click();
+  const f = d.getElementById('evForm');
+  f.title.value = 'Синк-тест';
+  f.requestSubmit();
+  let changed = false;
+  for (let i = 0; i < 60 && !changed; i++) {
+    await wait(250);
+    const j = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' }).then((r) => r.json());
+    changed = j.sha !== before.sha;
+    if (changed) before.lastSha = j.sha;
+  }
+  eq('edit pushed automatically', changed, true);
+
+  // switch off (confirm dialogs auto-accepted)
+  w.confirm = () => true;
+  d.getElementById('settingsBtn').click();
+  d.querySelector('[data-act="sync-off"]').click();
+  await wait(300);
+  eq('switched off', w.localStorage.getItem('good-calendar:sync'), null);
+  eq('setup form back', !!d.querySelector('[data-act="sync-setup"]'), true);
+
+  const del = await fetch(`https://api.github.com/repos/${repo}/contents/${path}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: 'remove sync UI self-test file', sha: before.lastSha || before.sha }),
+  });
+  eq('cleanup', del.status, 200);
+} catch (e) {
+  results.push([false, 'exception', String(e && e.message), '']);
+}
+const fails = results.filter((r) => !r[0]);
+out.textContent = `${results.length - fails.length}/${results.length} passed\n`
+  + fails.map((x) => `FAIL ${x[1]}: got ${JSON.stringify(x[2])}, want ${JSON.stringify(x[3])}`).join('\n');
+</script>

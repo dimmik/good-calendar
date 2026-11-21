@@ -12,6 +12,7 @@
 <iframe id="c" width="600" height="860"></iframe>
 <iframe id="d" src="../" width="390" height="860"></iframe>
 <iframe id="e" src="../" width="390" height="860"></iframe>
+<iframe id="f" src="../" width="390" height="860"></iframe>
 <script type="module">
   import { defaultState, encodeShare } from '../js/store.js';
   const st = defaultState();
@@ -29,6 +30,11 @@
   doc('d').getElementById('evTimeBtn').click();
   doc('e').getElementById('settingsBtn').click();
   doc('e').querySelector('[data-time-s="workEnd"]').click();
+  // f: the sync section of the settings, with the first-device form open
+  doc('f').getElementById('settingsBtn').click();
+  doc('f').querySelector('.sync-setup').open = true;
+  doc('f').querySelector('.sync-setup').closest('.dlg-body').querySelectorAll('h3')
+    .forEach((h) => { if (h.textContent === 'Синхронизация') h.scrollIntoView(); });
   await wait(300);
   doc('e').querySelectorAll('.tp-num')[1].focus();
 </script>

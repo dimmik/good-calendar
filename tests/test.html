@@ -126,6 +126,40 @@ let threw = false;
 try { await decodeShare('garbage'); } catch { threw = true; }
 eq('bad code throws', threw, true);
 
+// Sync: merging overrides and settings by time, replace, canonical form, encryption, pairing
+{
+  const { canonical, replaceWith } = await import('../js/store.js');
+  const sy = await import('../js/sync.js');
+  const A = normalize({ v: 3, overrides: { '2026-12-01': 'off', '2026-12-02': 'off' }, overridesU: { '2026-12-01': 10, '2026-12-02': 10 }, settings: { workEnd: '17:00' }, settingsU: 5 });
+  const B = normalize({ v: 3, overrides: { '2026-12-02': 'work' }, overridesU: { '2026-12-01': 20, '2026-12-02': 5 }, settings: { workEnd: '19:00' }, settingsU: 9 });
+  const AB = mergeStates(A, B);
+  eq('override removed on newer side', AB.overrides['2026-12-01'], undefined);
+  eq('override kept on newer side', AB.overrides['2026-12-02'], 'off');
+  eq('newer settings win', AB.settings.workEnd, '19:00');
+  eq('merge is symmetric (canonical)', canonical(mergeStates(A, B)), canonical(mergeStates(B, A)));
+  const ev = (id, u) => ({ id, title: id, date: '2026-12-10', u });
+  const X = normalize({ v: 3, events: [ev('a', 1), ev('b', 1)] });
+  const Y = normalize({ v: 3, events: [ev('b', 1), ev('a', 1)] });
+  eq('canonical ignores order', canonical(X) === canonical(Y), true);
+  const R = replaceWith(X, normalize({ v: 3, events: [ev('c', 1)] }), 100);
+  eq('replace tombstones the rest', [R.deleted.a, R.deleted.b, R.events.map((e) => e.u)], [100, 100, [100]]);
+  eq('replace survives merge with old data', mergeStates(X, R).events.map((e) => e.id), ['c']);
+
+  const cfg = { repo: 'o/r', path: 'calendar.enc', token: 'github_pat_' + 'x'.repeat(40), key: sy.newKey() };
+  eq('config valid', sy.validConfig(cfg), true);
+  const enc = await sy.encryptState(cfg, X);
+  eq('ciphertext hides titles', /"title"|\bb\b/.test(JSON.parse(enc).ct), false);
+  eq('decrypt roundtrip', canonical(await sy.decryptState(cfg, enc)), canonical(X));
+  let kind = '';
+  try { await sy.decryptState({ ...cfg, key: sy.newKey() }, enc); } catch (e) { kind = e.kind; }
+  eq('wrong key detected', kind, 'key');
+  const link = sy.pairingLink(cfg);
+  eq('pairing link roundtrip', sy.parsePairing(link), cfg);
+  let bad = false;
+  try { sy.parsePairing('#sync=abc'); } catch { bad = true; }
+  eq('bad pairing rejected', bad, true);
+}
+
 // Time picker: tap the dial like a user would
 const { pickTime } = await import('../js/timepicker.js');
 const tap = (svg, val, ring) => {

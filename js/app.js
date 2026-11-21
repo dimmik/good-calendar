@@ -8,8 +8,12 @@ import {
 } from './rules.js';
 import {
   load, save, normalize, defaultState, encodeShare, decodeShare, mergeStates, shareUrl, newId,
-  sanitizeEvent, COLORS, STORAGE_KEY, SHARE_PARAM,
+  sanitizeEvent, COLORS, STORAGE_KEY, SHARE_PARAM, replaceWith,
 } from './store.js';
+import {
+  createSync, loadSyncConfig, saveSyncConfig, pairingLink, parsePairing, newKey, validConfig, getRemote,
+  DEFAULT_PATH, SYNC_PARAM,
+} from './sync.js';
 
 import { VERSION } from './version.js';
 import { pickTime } from './timepicker.js';
@@ -32,6 +36,42 @@ function commit({ keepSettings = false } = {}) {
   cal = makeCal(state);
   renderAll();
   if (!keepSettings && $('#setDlg').open) renderSettings();
+  sync.schedule();
+}
+
+/** Mark that settings changed (so the change wins when merged with other devices). */
+const touchSettings = () => { state.settingsU = Date.now(); };
+
+// ---------- Sync ----------
+
+const sync = createSync({
+  getState: () => state,
+  setState: (next) => {
+    state = next;
+    save(state);
+    cal = makeCal(state);
+    renderAll();
+    if ($('#setDlg').open) renderSettings();
+  },
+  onStatus: (st) => {
+    $('#settingsBtn').classList.toggle('warn', st.state === 'error');
+    const el = $('#syncStatus');
+    if (el) { setText(el, syncStatusText(st)); el.classList.toggle('err', st.state === 'error'); }
+  },
+});
+
+function syncStatusText(st) {
+  const hm = (t) => { const d = new Date(t); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+  switch (st.state) {
+    case 'syncing': return 'Синхронизация…';
+    case 'ok': return `Синхронизировано в ${hm(st.at)}`;
+    case 'error': return `Не получилось (${hm(st.at)}): ${st.error}`;
+    case 'idle': {
+      const c = loadSyncConfig();
+      return c && c.lastSync ? `Последняя синхронизация в ${hm(c.lastSync)}` : 'Ещё не синхронизировалось';
+    }
+    default: return '';
+  }
 }
 
 // ---------- Today ----------
@@ -602,24 +642,83 @@ function renderSettings() {
       <label class="btn small file-btn">Загрузить файл<input type="file" accept="application/json,.json" id="importFile" hidden></label>
     </div>
 
+    <h3>Синхронизация</h3>
+    ${syncSectionHtml()}
+
     <h3>Приложение</h3>
     ${isStandalone() ? '<p class="muted small">Установлено ✓</p>'
       : canInstall ? '<div class="btn-row"><button class="btn primary" data-act="install">Установить на устройство</button></div>'
         : isIOS ? '<p class="muted small">Установка на iPhone/iPad: в Safari нажмите «Поделиться» → «На экран „Домой“».</p>'
           : '<p class="muted small">Установка: меню браузера → «Установить приложение» или «Добавить на главный экран».</p>'}
     <div class="btn-row"><button class="btn small ghost danger" data-act="reset-all">Сбросить всё</button></div>
-    <p class="muted small ver">Версия ${VERSION} · данные хранятся только в этом браузере</p>`;
+    <p class="muted small ver">Версия ${VERSION} · ${loadSyncConfig() ? 'данные синхронизируются в зашифрованном виде' : 'данные хранятся только в этом браузере'}</p>`;
+}
+
+function syncSectionHtml() {
+  const c = loadSyncConfig();
+  if (c) {
+    const st = sync.status();
+    return `
+    <p class="muted small">Файл <b>${esc(c.path)}</b> в репозитории <b>${esc(c.repo)}</b>, зашифрован ключом, который есть только у ваших устройств.</p>
+    <p class="small sync-status${st.state === 'error' ? ' err' : ''}" id="syncStatus">${esc(syncStatusText(st))}</p>
+    <div class="btn-row">
+      <button class="btn primary" data-act="sync-now">Синхронизировать</button>
+      <button class="btn" data-act="sync-pair">Подключить другое устройство</button>
+      <button class="btn ghost danger" data-act="sync-off">Отключить</button>
+    </div>`;
+  }
+  return `
+    <p class="muted small">События и настройки шифруются прямо на устройстве и хранятся в файле в вашем GitHub-репозитории. Ключ есть только у ваших устройств, GitHub видит одну шифровку.</p>
+    <div class="fld"><span>Подключить по ссылке с другого устройства</span>
+      <div class="linkrow">
+        <input id="pairIn" placeholder="Ссылка подключения" aria-label="Ссылка подключения" autocomplete="off">
+        <button class="btn" data-act="pair-apply">Подключить</button>
+      </div>
+    </div>
+    <details class="sync-setup">
+      <summary>Первое устройство: настроить с нуля</summary>
+      <div class="sync-form">
+        <label class="fld"><span>Репозиторий (владелец/имя)</span><input id="syncRepo" value="dimmik/goodcalc-data" autocomplete="off" spellcheck="false"></label>
+        <label class="fld"><span>Файл</span><input id="syncPath" value="${DEFAULT_PATH}" autocomplete="off" spellcheck="false"></label>
+        <label class="fld"><span>Токен GitHub (доступ только к этому репозиторию, Contents: Read and write)</span><input id="syncToken" type="password" autocomplete="off" spellcheck="false"></label>
+        <div class="btn-row"><button class="btn primary" data-act="sync-setup">Создать ключ и включить</button></div>
+      </div>
+    </details>`;
+}
+
+async function enableSync(c) {
+  saveSyncConfig(c);
+  if ($('#setDlg').open) renderSettings();
+  await sync.run();
+  const st = sync.status();
+  if (st.state === 'error') {
+    if (st.kind === 'key' || st.kind === 'auth' || st.kind === 'perm' || st.kind === 'format') {
+      saveSyncConfig(null);
+      if ($('#setDlg').open) renderSettings();
+      toast(`Синхронизация не включена: ${st.error}`);
+      return false;
+    }
+    toast(`Синхронизация включена, но пока не получилось: ${st.error}`);
+    return true;
+  }
+  toast('Синхронизация включена');
+  return true;
+}
+
+async function askPair(c) {
+  if (!confirm(`Подключить синхронизацию через ${c.repo}?\nДанные этого устройства объединятся с общими.`)) return;
+  await enableSync(c);
 }
 
 $('#setBody').addEventListener('change', (e) => {
   const t = e.target;
   const s = state.settings;
-  if (t.dataset.b) { s.builtins[t.dataset.b] = t.checked; commit({ keepSettings: true }); return; }
+  if (t.dataset.b) { s.builtins[t.dataset.b] = t.checked; touchSettings(); commit({ keepSettings: true }); return; }
   if (t.dataset.s) {
     const k = t.dataset.s;
     if (t.type === 'checkbox') s[k] = t.checked;
-    else if (t.type === 'time') { if (!t.value) return; s[k] = t.value; }
     else s[k] = t.value;
+    touchSettings();
     commit({ keepSettings: true });
     return;
   }
@@ -649,7 +748,7 @@ $('#setBody').addEventListener('click', async (e) => {
   if (tb) {
     const k = tb.dataset.timeS;
     const v = await pickTime(state.settings[k], { title: k === 'workStart' ? 'Начало рабочего дня' : 'Конец рабочего дня' });
-    if (v) { state.settings[k] = v; commit(); }
+    if (v) { state.settings[k] = v; touchSettings(); commit(); }
     return;
   }
   const btn = e.target.closest('[data-act]');
@@ -681,10 +780,60 @@ $('#setBody').addEventListener('click', async (e) => {
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
       break;
     }
+    case 'sync-now': await sync.run(); break;
+    case 'sync-pair': {
+      const c = loadSyncConfig();
+      if (c) {
+        showLink({
+          title: 'Подключить другое устройство',
+          desc: 'Откройте ссылку или отсканируйте QR-код на другом устройстве — оно начнёт синхронизироваться с этим. В ссылке ключ и токен: не пересылайте её чужим.',
+          url: pairingLink(c),
+          size: '',
+        });
+      }
+      break;
+    }
+    case 'sync-off':
+      if (!confirm('Отключить синхронизацию на этом устройстве? Данные останутся здесь и в общем файле.')) return;
+      saveSyncConfig(null);
+      sync.run();
+      renderSettings();
+      toast('Синхронизация отключена');
+      break;
+    case 'pair-apply': {
+      let c;
+      try { c = parsePairing($('#pairIn').value); } catch { toast('Не похоже на ссылку подключения'); return; }
+      await askPair(c);
+      break;
+    }
+    case 'sync-setup': {
+      const c = {
+        repo: $('#syncRepo').value.trim().replace(/^https:\/\/github\.com\//, '').replace(/\/+$/, ''),
+        path: $('#syncPath').value.trim() || DEFAULT_PATH,
+        token: $('#syncToken').value.trim(),
+        key: newKey(),
+      };
+      if (!validConfig(c)) { toast('Проверьте репозиторий, имя файла и токен'); return; }
+      btn.disabled = true;
+      try {
+        // Refuse to start a second, incompatible key over existing data.
+        if (await getRemote(c).catch((e) => { if (e.kind === 'key' || e.kind === 'format') return 'taken'; throw e; }) === 'taken') {
+          toast('В этом файле уже есть данные с другим ключом — подключите устройство по ссылке с того, где синхронизация уже работает');
+          return;
+        }
+      } catch (e) {
+        toast(e.message);
+        return;
+      } finally {
+        btn.disabled = false;
+      }
+      await enableSync(c);
+      break;
+    }
     case 'install': doInstall(); break;
     case 'reset-all':
       if (!confirm('Удалить все события и вернуть настройки по умолчанию?')) return;
-      state = defaultState();
+      state = replaceWith(state, defaultState());
       commit();
       toast('Всё сброшено');
       break;
@@ -712,8 +861,20 @@ function loadQr() {
 async function openShare() {
   const code = await encodeShare(state);
   const url = shareUrl(code);
+  showLink({
+    title: 'Перенести на другое устройство',
+    desc: 'Откройте эту ссылку на телефоне или другом компьютере — события и настройки применятся там. Можно отсканировать QR-код камерой.',
+    url,
+    size: `${state.events.length} ${plural(state.events.length, 'событие', 'события', 'событий')} · ${url.length} символов`,
+  });
+}
+
+/** The link dialog with a QR code (used for sharing data and for pairing devices). */
+async function showLink({ title, desc, url, size }) {
+  setText($('#shareTitle'), title);
+  setText($('#shareDesc'), desc);
   $('#shareLink').value = url;
-  setText($('#shareSize'), `${state.events.length} ${plural(state.events.length, 'событие', 'события', 'событий')} · ${url.length} символов`);
+  setText($('#shareSize'), size);
   $('#nativeShare').hidden = !navigator.share;
   $('#qr').innerHTML = '';
   if (!$('#shareDlg').open) $('#shareDlg').showModal();
@@ -740,7 +901,7 @@ $('#copyLink').addEventListener('click', async () => {
 });
 
 $('#nativeShare').addEventListener('click', () => {
-  navigator.share({ title: 'Календарь', text: 'Мои события и настройки календаря', url: $('#shareLink').value }).catch(() => {});
+  navigator.share({ title: 'Календарь', text: $('#shareTitle').textContent, url: $('#shareLink').value }).catch(() => {});
 });
 
 let pendingImport = null;
@@ -765,13 +926,21 @@ function finishImport(next, msg) {
 }
 
 $('#impMerge').addEventListener('click', () => pendingImport && finishImport(mergeStates(state, pendingImport), 'Данные объединены'));
-$('#impReplace').addEventListener('click', () => pendingImport && finishImport(normalize(pendingImport), 'Данные заменены'));
+$('#impReplace').addEventListener('click', () => pendingImport && finishImport(replaceWith(state, pendingImport), 'Данные заменены'));
 
 function clearHash() {
   history.replaceState(null, '', location.pathname + location.search);
 }
 
 async function checkHash() {
+  if (location.hash.includes(`${SYNC_PARAM}=`)) {
+    const h = location.hash;
+    clearHash(); // the link holds the key and the token: do not leave it in the address bar
+    let c;
+    try { c = parsePairing(h); } catch { toast('Ссылка подключения повреждена или неполная'); return; }
+    await askPair(c);
+    return;
+  }
   if (!location.hash.includes(`${SHARE_PARAM}=`)) return;
   const h = location.hash;
   clearHash();
@@ -847,11 +1016,13 @@ document.addEventListener('click', (e) => {
       const want = inf.off ? 'work' : 'off';
       if ((want === 'off') === inf.base) delete state.overrides[inf.key];
       else state.overrides[inf.key] = want;
+      state.overridesU[inf.key] = Date.now();
       commit();
       break;
     }
     case 'reset-day':
       delete state.overrides[ymd(selected)];
+      state.overridesU[ymd(selected)] = Date.now();
       commit();
       break;
     default:
@@ -920,10 +1091,19 @@ function tick() {
   timer = setTimeout(tick, 1000 - (Date.now() % 1000) + 20);
 }
 
+let lastSyncRun = 0;
+function syncSoon() {
+  // on returning to the app; not more often than every 20 seconds
+  if (Date.now() - lastSyncRun < 20e3) return;
+  lastSyncRun = Date.now();
+  sync.run();
+}
+
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
   tick();
   checkForUpdate();
+  syncSoon();
 });
 
 // ---------- Full screen ----------
@@ -1003,7 +1183,9 @@ $('#updateClose').addEventListener('click', () => {
   $('#updateBar').hidden = true;
 });
 setInterval(() => checkForUpdate(true), 30 * 60e3);
-window.addEventListener('online', () => checkForUpdate(true));
+window.addEventListener('online', () => { checkForUpdate(true); sync.run(); });
+setInterval(() => { if (!document.hidden) sync.run(); }, 5 * 60e3);
+setTimeout(() => { lastSyncRun = Date.now(); sync.run(); }, 800);
 
 renderAll();
 updateInstallBtn();

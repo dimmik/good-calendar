@@ -1,0 +1,95 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Live sync test</title>
+<pre id="out">running…</pre>
+<script type="module">
+// Dev helper: two simulated devices sync through a real GitHub repository.
+// Open as  tests/sync-live.html#repo=owner/name&t=<token>  — uses a throwaway file under
+// _selftest/ and deletes it at the end. Never prints the token.
+import { normalize, canonical, newId } from '../js/store.js';
+import { createSync, saveSyncConfig, newKey, getRemote, decryptState } from '../js/sync.js';
+
+const out = document.getElementById('out');
+const params = new URLSearchParams(location.hash.slice(1));
+history.replaceState(null, '', location.pathname); // drop the token from the address
+const results = [];
+const eq = (name, got, want) => results.push([JSON.stringify(got) === JSON.stringify(want), name, got, want]);
+
+const cfg = { repo: params.get('repo'), path: `_selftest/run-${Date.now()}.enc`, token: params.get('t'), key: newKey() };
+saveSyncConfig(cfg);
+
+const ev = (title) => ({ id: newId(), title, date: '2026-12-20', time: '', repeat: 'none', color: '#4f5bd5', emoji: '', countdown: true, u: Date.now() });
+const device = (name) => {
+  const d = { state: normalize({ v: 3 }), statuses: [] };
+  d.sync = createSync({ getState: () => d.state, setState: (s) => { d.state = s; }, onStatus: (s) => d.statuses.push(s.state) });
+  return d;
+};
+const A = device('A');
+const B = device('B');
+const titles = (d) => d.state.events.map((e) => e.title).sort();
+const lastErr = (d) => { const s = d.sync.status(); return s.state === 'error' ? s.error : s.state; };
+
+try {
+  A.state.events.push(ev('from A'));
+  await A.sync.run();
+  eq('A creates the file', lastErr(A), 'ok');
+
+  B.state.events.push(ev('from B'));
+  await B.sync.run();
+  eq('B gets A and keeps its own', titles(B), ['from A', 'from B']);
+
+  await A.sync.run();
+  eq('A gets B', titles(A), ['from A', 'from B']);
+
+  // delete on B, override a day on B, change settings on A
+  const gone = B.state.events.find((e) => e.title === 'from A');
+  B.state.events = B.state.events.filter((e) => e !== gone);
+  B.state.deleted[gone.id] = Date.now();
+  B.state.overrides['2026-12-24'] = 'off';
+  B.state.overridesU['2026-12-24'] = Date.now();
+  await B.sync.run();
+  A.state.settings.workEnd = '17:30';
+  A.state.settingsU = Date.now();
+  await A.sync.run();
+  eq('deletion travels', titles(A), ['from B']);
+  eq('override travels', A.state.overrides['2026-12-24'], 'off');
+  await B.sync.run();
+  eq('settings travel', B.state.settings.workEnd, '17:30');
+
+  // both edit at the same time and sync concurrently: the sha check must make one retry
+  A.state.events.push(ev('A again'));
+  B.state.events.push(ev('B again'));
+  await Promise.all([A.sync.run(), B.sync.run()]);
+  await Promise.all([A.sync.run(), B.sync.run()]);
+  eq('concurrent edits both kept', [titles(A), titles(B)], [['A again', 'B again', 'from B'], ['A again', 'B again', 'from B']]);
+  eq('devices converge', canonical(A.state) === canonical(B.state), true);
+
+  const remote = await getRemote(cfg);
+  eq('remote equals devices', canonical(remote.state) === canonical(A.state), true);
+
+  // what GitHub stores is ciphertext
+  const raw = await fetch(`https://api.github.com/repos/${cfg.repo}/contents/${cfg.path}`, {
+    headers: { Authorization: `Bearer ${cfg.token}`, Accept: 'application/vnd.github.raw+json' }, cache: 'no-store',
+  }).then((r) => r.text());
+  eq('stored file has no plaintext', /again|from B|17:30/.test(raw), false);
+
+  let kind = '';
+  try { await decryptState({ ...cfg, key: newKey() }, raw); } catch (e) { kind = e.kind; }
+  eq('another key cannot read it', kind, 'key');
+
+  // cleanup
+  const del = await fetch(`https://api.github.com/repos/${cfg.repo}/contents/${cfg.path}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${cfg.token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: 'remove sync self-test file', sha: remote.sha }),
+  });
+  eq('cleanup', del.status, 200);
+} catch (e) {
+  results.push([false, 'exception', String(e && e.message), '']);
+} finally {
+  saveSyncConfig(null);
+}
+const fails = results.filter((r) => !r[0]);
+out.textContent = `${results.length - fails.length}/${results.length} passed\n`
+  + fails.map((f) => `FAIL ${f[1]}: got ${JSON.stringify(f[2])}, want ${JSON.stringify(f[3])}`).join('\n');
+</script>

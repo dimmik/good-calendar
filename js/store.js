@@ -13,7 +13,9 @@ export function defaultState() {
     events: [],
     paydays: [{ id: 'salary', title: 'Зарплата', day: 5, shift: 'before', u: 0 }],
     overrides: {},
+    overridesU: {}, // date → when its override was last set or removed (for merging)
     deleted: {},
+    settingsU: 0, // when settings were last changed (for merging)
     settings: {
       country: 'rs',
       workStart: '09:00',
@@ -107,13 +109,20 @@ export function normalize(raw) {
       if (reDate.test(k) && (v === 'off' || v === 'work')) overrides[k] = v;
     }
   }
+  const overridesU = {};
+  if (raw.overridesU && typeof raw.overridesU === 'object') {
+    for (const [k, v] of Object.entries(raw.overridesU).slice(0, 5000)) {
+      if (reDate.test(k) && Number.isFinite(v)) overridesU[k] = v;
+    }
+  }
   const deleted = {};
   if (raw.deleted && typeof raw.deleted === 'object') {
     const ent = Object.entries(raw.deleted).filter(([k, v]) => reId.test(k) && Number.isFinite(v));
     ent.sort((a, b) => b[1] - a[1]);
     for (const [k, v] of ent.slice(0, 200)) deleted[k] = v;
   }
-  return { v: 3, events, paydays, overrides, deleted, settings };
+  const settingsU = Number.isFinite(raw.settingsU) ? raw.settingsU : 0;
+  return { v: 3, events, paydays, overrides, overridesU, deleted, settings, settingsU };
 }
 
 export function load() {
@@ -136,10 +145,71 @@ export function save(state) {
 export const STORAGE_KEY = KEY;
 
 /**
- * Merge `inc` into `mine`: newer edit of the same item wins, deletions travel along
- * (tombstones), settings and day overrides are taken from the incoming state.
+ * Merge `inc` into `mine`: the newer edit of the same item wins and deletions travel along
+ * (tombstones). The same goes for day overrides (per day) and settings (as a whole); on a
+ * tie the incoming side wins.
  */
 export function mergeStates(mine, inc) {
+  // Day overrides: days with a timestamp on either side go to the newer side (a missing
+  // value there means "removed"); days without timestamps (older data) are simply united.
+  const overrides = { ...mine.overrides, ...inc.overrides };
+  const overridesU = { ...mine.overridesU };
+  for (const day of new Set([...Object.keys(mine.overridesU || {}), ...Object.keys(inc.overridesU || {})])) {
+    const a = (mine.overridesU || {})[day] || 0;
+    const b = (inc.overridesU || {})[day] || 0;
+    const win = b >= a ? inc : mine;
+    if (win.overrides[day]) overrides[day] = win.overrides[day];
+    else delete overrides[day];
+    overridesU[day] = Math.max(a, b);
+  }
+  const incSettings = (inc.settingsU || 0) >= (mine.settingsU || 0);
+  return mergeItems(mine, inc, {
+    overrides,
+    overridesU,
+    settings: incSettings ? inc.settings : mine.settings,
+    settingsU: Math.max(mine.settingsU || 0, inc.settingsU || 0),
+  });
+}
+
+/**
+ * Make `next` the new truth in a way that survives merging with other devices: whatever
+ * `mine` has and `next` lacks is marked deleted, and everything in `next` counts as just edited.
+ */
+export function replaceWith(mine, next, at = Date.now()) {
+  const n = normalize(next);
+  const keep = new Set([...n.events, ...n.paydays].map((x) => x.id));
+  const deleted = { ...mine.deleted, ...n.deleted };
+  for (const x of [...mine.events, ...mine.paydays]) if (!keep.has(x.id)) deleted[x.id] = at;
+  for (const id of keep) delete deleted[id];
+  const overridesU = { ...n.overridesU };
+  for (const day of new Set([...Object.keys(mine.overrides), ...Object.keys(mine.overridesU || {}), ...Object.keys(n.overrides)])) {
+    overridesU[day] = at;
+  }
+  return normalize({
+    ...n,
+    events: n.events.map((e) => ({ ...e, u: at })),
+    paydays: n.paydays.map((p) => ({ ...p, u: at })),
+    deleted,
+    overridesU,
+    settingsU: at,
+  });
+}
+
+/** Stable text form of the shared data (key and item order do not matter), for comparing. */
+export function canonical(s) {
+  const sortKeys = (v) => {
+    if (Array.isArray(v)) return v.map(sortKeys);
+    if (v && typeof v === 'object') return Object.fromEntries(Object.keys(v).sort().map((k) => [k, sortKeys(v[k])]));
+    return v;
+  };
+  const byId = (a) => [...a].sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+  const { events, paydays, overrides, overridesU, deleted, settings, settingsU } = s;
+  return JSON.stringify(sortKeys({
+    events: byId(events), paydays: byId(paydays), overrides, overridesU, deleted, settings, settingsU,
+  }));
+}
+
+function mergeItems(mine, inc, rest) {
   const deleted = { ...mine.deleted };
   for (const [k, v] of Object.entries(inc.deleted)) deleted[k] = Math.max(deleted[k] || 0, v);
   const mergeList = (a, b) => {
@@ -154,9 +224,8 @@ export function mergeStates(mine, inc) {
     v: 3,
     events: mergeList(mine.events, inc.events),
     paydays: mergeList(mine.paydays, inc.paydays),
-    overrides: { ...mine.overrides, ...inc.overrides },
     deleted,
-    settings: inc.settings,
+    ...rest,
   });
 }
 
@@ -184,9 +253,16 @@ async function pipe(bytes, stream) {
 
 export const SHARE_PARAM = 'import';
 
+/** The part of the state that travels between devices (links, sync). */
+export function shareable(state) {
+  const { events, paydays, overrides, overridesU, deleted, settings, settingsU } = state;
+  return { v: 3, events, paydays, overrides, overridesU, deleted, settings, settingsU };
+}
+
+export const b64u = { enc: (bytes) => b64uEnc(bytes), dec: (s) => b64uDec(s) };
+
 export async function encodeShare(state) {
-  const { events, paydays, overrides, deleted, settings } = state;
-  const json = JSON.stringify({ v: 3, events, paydays, overrides, deleted, settings });
+  const json = JSON.stringify(shareable(state));
   const bytes = new TextEncoder().encode(json);
   if (typeof CompressionStream === 'function') {
     try {
