@@ -145,8 +145,12 @@ let bcRaf = 0;
 let bcMinute = -1;
 
 const bigClockOn = () => state.settings.bigClock && wideMq.matches;
-/** Clock-face angle (degrees from 12, clockwise) of a time of day, on a 12-hour dial. */
-const dialAngle = (d) => ((d.getHours() % 12) * 60 + d.getMinutes() + d.getSeconds() / 60) / 2;
+const dial24 = () => !!state.settings.clock24;
+/** Clock-face angle (degrees from the top, clockwise) of a time of day: a 12- or 24-hour dial. */
+const dialAngle = (d) => {
+  const min = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
+  return dial24() ? min / 4 : (min % 720) / 2;
+};
 
 function arcPath(r, a0, span) {
   if (span <= 0.05) return '';
@@ -158,19 +162,25 @@ function arcPath(r, a0, span) {
 function renderBigClock() {
   const el = $('#bclock');
   if (!bigClockOn()) { el.innerHTML = ''; stopSweep(); return; }
+  const d24 = dial24();
   let ticks = '';
-  for (let i = 0; i < 60; i++) {
-    const kind = i % 15 === 0 ? 'q' : i % 5 === 0 ? 'h' : 'm';
-    const a = (i * 6 * Math.PI) / 180;
+  const tick = (deg, kind) => {
+    const a = (deg * Math.PI) / 180;
     const r1 = { q: 80, h: 84, m: 90 }[kind];
     ticks += `<line x1="${(Math.sin(a) * r1).toFixed(2)}" y1="${(-Math.cos(a) * r1).toFixed(2)}" x2="${(Math.sin(a) * 95).toFixed(2)}" y2="${(-Math.cos(a) * 95).toFixed(2)}" class="${kind}"/>`;
-  }
+  };
+  // minute marks; the hour marks sit next to the numerals (every 30° or, on a 24-hour dial, 15°)
+  for (let i = 0; i < 60; i++) if (d24 || i % 5) tick(i * 6, 'm');
+  for (let h = 0; h < (d24 ? 24 : 12); h++) tick(h * (d24 ? 15 : 30), h % (d24 ? 6 : 3) ? 'h' : 'q');
   let nums = '';
-  for (let h = 1; h <= 12; h++) {
-    const a = (h * 30 * Math.PI) / 180;
-    nums += `<text x="${(Math.sin(a) * 68).toFixed(2)}" y="${(-Math.cos(a) * 68).toFixed(2)}"${h % 3 ? '' : ' class="big"'}>${h}</text>`;
+  for (let h = d24 ? 0 : 1; h <= (d24 ? 23 : 12); h++) {
+    const a = ((d24 ? h * 15 : h * 30) * Math.PI) / 180;
+    const cls = h % (d24 ? 6 : 3) === 0 ? 'big' : d24 && h % 2 ? 'odd' : '';
+    nums += `<text x="${(Math.sin(a) * 68).toFixed(2)}" y="${(-Math.cos(a) * 68).toFixed(2)}"${cls ? ` class="${cls}"` : ''}>${h}</text>`;
   }
-  el.innerHTML = `<svg class="bc-svg" viewBox="-114 -114 228 228" role="img" aria-label="Часы">
+  el.innerHTML = `<button class="bc-mode" data-bc-mode title="Циферблат на 12 или 24 часа" aria-label="Циферблат: ${d24 ? '24' : '12'} часа">
+    <span${d24 ? '' : ' class="on"'}>12</span><span${d24 ? ' class="on"' : ''}>24</span></button>
+  <svg class="bc-svg${d24 ? ' d24' : ''}" viewBox="-114 -114 228 228" role="img" aria-label="Часы">
     <defs><radialGradient id="bcGrad" cx="50%" cy="38%" r="70%"><stop offset="0" class="bc-g0"/><stop offset="1" class="bc-g1"/></radialGradient></defs>
     <circle r="100" class="bc-face"/>
     <g id="bcArc"><path class="bc-track"/><path class="bc-done"/></g>
@@ -198,8 +208,8 @@ function setHands(t) {
   if (!h) return;
   const sec = t.getSeconds() + (reduceMotion.matches ? 0 : t.getMilliseconds() / 1000);
   const min = t.getMinutes() + sec / 60;
-  const hr = (t.getHours() % 12) + min / 60;
-  h.setAttribute('transform', `rotate(${(hr * 30).toFixed(3)})`);
+  const hr = t.getHours() + min / 60;
+  h.setAttribute('transform', `rotate(${(dial24() ? hr * 15 : (hr % 12) * 30).toFixed(3)})`);
   $('#bcM').setAttribute('transform', `rotate(${(min * 6).toFixed(3)})`);
   $('#bcS').setAttribute('transform', `rotate(${(sec * 6).toFixed(3)})`);
 }
@@ -218,7 +228,7 @@ function tickBigClock() {
   arc.classList.toggle('off', i.off);
   if (work) {
     const a0 = dialAngle(a);
-    const span = Math.min(359.9, ((z - a) / 36e5) * 30);
+    const span = Math.min(359.9, ((z - a) / 36e5) * (dial24() ? 15 : 30));
     $('.bc-track', arc).setAttribute('d', arcPath(105, a0, span));
     $('.bc-done', arc).setAttribute('d', arcPath(105, a0, span * p));
   } else {
@@ -230,16 +240,17 @@ function tickBigClock() {
   bcMinute = now.getMinutes();
   setText($('#bcMonth'), MONTHS[now.getMonth()].toUpperCase());
   setText($('#bcDate'), `${WD_SHORT[now.getDay()].toUpperCase()} ${now.getDate()}`);
-  // today's timed events within the next 12 hours, as dots on the rim
+  // today's timed events as dots on the rim: on a 24-hour dial all of them (past ones faded),
+  // on a 12-hour dial those within the next 12 hours
   const today = startOfDay(now);
   const until = new Date(+now + 12 * 36e5);
   const dots = [];
   for (const ev of state.events) {
     if (!ev.time || !eventDatesInRange(ev, today, today).length) continue;
     const t = withTime(today, ev.time);
-    if (t < now || t >= until) continue;
+    if (!dial24() && (t < now || t >= until)) continue;
     const ang = (dialAngle(t) * Math.PI) / 180;
-    dots.push(`<circle cx="${(Math.sin(ang) * 105).toFixed(2)}" cy="${(-Math.cos(ang) * 105).toFixed(2)}" r="5" style="--c:${ev.color}"><title>${esc(`${ev.time} ${ev.title}`)}</title></circle>`);
+    dots.push(`<circle${t < now ? ' class="past"' : ''} cx="${(Math.sin(ang) * 105).toFixed(2)}" cy="${(-Math.cos(ang) * 105).toFixed(2)}" r="5" style="--c:${ev.color}"><title>${esc(`${ev.time} ${ev.title}`)}</title></circle>`);
   }
   $('#bcDots').innerHTML = dots.join('');
   let text;
@@ -265,6 +276,13 @@ function stopSweep() {
   if (bcRaf) cancelAnimationFrame(bcRaf);
   bcRaf = 0;
 }
+
+$('#bclock').addEventListener('click', (e) => {
+  if (!e.target.closest('[data-bc-mode]')) return;
+  state.settings.clock24 = !state.settings.clock24;
+  touchSettings();
+  commit({ keepSettings: true });
+});
 
 // The dial takes the room left under the day panel; hidden when there is too little of it.
 new ResizeObserver(() => {

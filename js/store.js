@@ -24,6 +24,7 @@ export function defaultState() {
       weekNumbers: false,
       analogClock: false,
       bigClock: true,
+      clock24: true, // big clock: 24-hour dial (midnight at the top, noon at the bottom)
       theme: 'auto',
     },
   };
@@ -96,6 +97,7 @@ export function normalize(raw) {
   // The clock was on by default in v2 (1.4.0); from v3 it is off unless turned on again.
   if (typeof s.analogClock === 'boolean' && raw.v >= 3) settings.analogClock = s.analogClock;
   if (typeof s.bigClock === 'boolean') settings.bigClock = s.bigClock;
+  if (typeof s.clock24 === 'boolean') settings.clock24 = s.clock24;
   if (['auto', 'light', 'dark'].includes(s.theme)) settings.theme = s.theme;
   settings.builtins = { ...d.settings.builtins };
   if (s.builtins && typeof s.builtins === 'object') {
