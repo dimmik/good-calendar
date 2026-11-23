@@ -202,7 +202,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .bc-ticks .m { stroke-width: .9; stroke-opacity: .25; }
 .bc-ticks .h { stroke-width: 2.2; stroke-opacity: .55; }
 .bc-ticks .q { stroke-width: 3.4; stroke-opacity: .8; }
-.bc-ticks .f { stroke: var(--accent); stroke-width: 2.2; }
+.bc-ticks .f { stroke-width: 1.4; stroke-opacity: .6; }
 .bclock text { stroke: none; text-anchor: middle; dominant-baseline: central; font-variant-numeric: tabular-nums; }
 .bc-nums text { fill: var(--muted); font-size: 12px; font-weight: 600; }
 .bc-nums .big { fill: var(--text); font-size: 17px; font-weight: 700; }

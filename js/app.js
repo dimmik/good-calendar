@@ -169,9 +169,9 @@ function renderBigClock() {
     ticks += `<line x1="${(Math.sin(a) * r1).toFixed(2)}" y1="${(-Math.cos(a) * r1).toFixed(2)}" x2="${(Math.sin(a) * r2).toFixed(2)}" y2="${(-Math.cos(a) * r2).toFixed(2)}" class="${kind}"/>`;
   };
   if (d24) {
-    // two rings: minutes on the rim (every 5 minutes in the accent colour), hours inside, by the numerals
-    for (let i = 0; i < 60; i++) tick(i * 6, i % 5 ? 'm' : 'f', i % 5 ? 91 : 87, 96);
-    for (let h = 0; h < 24; h++) tick(h * 15, h % 6 ? 'h' : 'q', h % 6 ? 81 : 78, 86);
+    // two rings: minutes on the rim (every 5 minutes longer), hours inside, by the numerals
+    for (let i = 0; i < 60; i++) tick(i * 6, i % 5 ? 'm' : 'f', i % 5 ? 92 : 86, 96);
+    for (let h = 0; h < 24; h++) tick(h * 15, h % 6 ? 'h' : 'q', h % 6 ? 79 : 77, 84);
   } else {
     for (let i = 0; i < 60; i++) if (i % 5) tick(i * 6, 'm', 90);
     for (let h = 0; h < 12; h++) tick(h * 30, h % 3 ? 'h' : 'q', h % 3 ? 84 : 80);
