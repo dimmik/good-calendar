@@ -34,6 +34,8 @@ eq('v1 data migrates ru → rs', normalize({ v: 1, settings: { country: 'ru' } }
 eq('v2 keeps ru', normalize({ v: 2, settings: { country: 'ru' } }).settings.country, 'ru');
 eq('clock off by default', defaultState().settings.analogClock, false);
 eq('v2 clock on → off', normalize({ v: 2, settings: { analogClock: true } }).settings.analogClock, false);
+eq('big clock on by default', defaultState().settings.bigClock, true);
+eq('big clock off kept', normalize({ v: 3, settings: { bigClock: false } }).settings.bigClock, false);
 eq('v3 clock on stays on', normalize({ v: 3, settings: { analogClock: true } }).settings.analogClock, true);
 eq('v1 keeps none',normalize({ v: 1, settings: { country: 'none' } }).settings.country, 'none');
 

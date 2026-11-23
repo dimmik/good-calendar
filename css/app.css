@@ -155,13 +155,59 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   .layout { grid-template-columns: 360px minmax(0, 1fr); align-items: start; }
   .col-a { grid-column: 1; grid-row: 1 / span 2; }
   .month { grid-column: 2; grid-row: 1; }
-  .day { grid-column: 2; grid-row: 2; }
+  .col-c { grid-column: 2; grid-row: 2; }
 }
+.col-c { display: grid; gap: var(--gap); min-width: 0; }
+.bclock { display: none; }
 @media (min-width: 1400px) {
   .layout { grid-template-columns: 380px minmax(0, 1fr) 340px; }
   .col-a { grid-row: 1; }
-  .day { grid-column: 3; grid-row: 1; position: sticky; top: calc(60px + env(safe-area-inset-top)); }
+  /* the day panel and the big clock share the column; the clock takes what is left of the screen */
+  .col-c {
+    grid-column: 3; grid-row: 1; position: sticky; top: calc(60px + env(safe-area-inset-top));
+    display: flex; flex-direction: column;
+    height: calc(100vh - 76px - env(safe-area-inset-top));
+    height: calc(100dvh - 76px - env(safe-area-inset-top));
+  }
+  .col-c .day { flex: 0 1 auto; min-height: 0; overflow: auto; }
+  .bclock:not(:empty) { display: flex; }
 }
+
+/* ---------- Big analog clock ---------- */
+
+.bclock {
+  flex: 1 1 0; min-height: 0; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px; padding: 14px;
+}
+.bclock.tiny { visibility: hidden; }
+.bc-svg { flex: none; width: var(--bc-size, 0px); height: var(--bc-size, 0px); overflow: visible; }
+.bc-cap { color: var(--muted); font-size: 14px; text-align: center; flex: none; }
+.bc-g0 { stop-color: var(--card); }
+.bc-g1 { stop-color: var(--card2); }
+.bc-face { fill: url(#bcGrad); stroke: var(--line); stroke-width: 1.5; }
+#bcArc path { fill: none; stroke-width: 5; stroke-linecap: round; }
+#bcArc .bc-track { stroke: var(--accent); stroke-opacity: .18; }
+#bcArc .bc-done { stroke: var(--accent); }
+#bcArc.off .bc-track { stroke: var(--off); stroke-opacity: .22; }
+.bc-ticks line { stroke: var(--text); stroke-linecap: round; }
+.bc-ticks .m { stroke-width: .9; stroke-opacity: .25; }
+.bc-ticks .h { stroke-width: 2.2; stroke-opacity: .55; }
+.bc-ticks .q { stroke-width: 3.4; stroke-opacity: .8; }
+.bclock text { stroke: none; text-anchor: middle; dominant-baseline: central; font-variant-numeric: tabular-nums; }
+.bc-nums text { fill: var(--muted); font-size: 12px; font-weight: 600; }
+.bc-nums .big { fill: var(--text); font-size: 17px; font-weight: 700; }
+.bc-month { fill: var(--muted); font-size: 7px; font-weight: 600; letter-spacing: .18em; }
+.bc-digital { fill: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .04em; }
+.bc-date rect { fill: var(--card); stroke: var(--line); stroke-width: 1; }
+.bc-date text { fill: var(--accent); font-size: 8.5px; font-weight: 700; }
+#bcDots circle { fill: var(--c, var(--accent)); stroke: var(--card); stroke-width: 2; }
+.bc-hands { filter: drop-shadow(0 1.5px 1.5px rgba(0, 0, 0, .22)); }
+.bc-h { fill: var(--accent); stroke: none; }
+.bc-m { fill: var(--text); stroke: none; }
+.bc-s line { stroke: var(--off); stroke-width: 1.3; stroke-linecap: round; }
+.bc-s circle { fill: var(--off); stroke: none; }
+.bc-pin { fill: var(--off); stroke: none; }
+.bc-pin2 { fill: var(--card); stroke: none; }
 
 .card {
   background: var(--card); border-radius: var(--r); padding: 18px;

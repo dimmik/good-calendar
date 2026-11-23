@@ -1,6 +1,6 @@
 import {
   ymd, parseYmd, startOfDay, addDays, daysInMonth, dayDiff, dayOfYear, daysInYear, isoWeek, wdMon,
-  withTime, MONTHS, MONTHS_GEN, WEEKDAYS, cap, plural, days, fmtShort, fmtLong, fmtRange, hms, pad2,
+  withTime, MONTHS, MONTHS_GEN, WEEKDAYS, WD_SHORT, cap, plural, days, fmtShort, fmtLong, fmtRange, hms, pad2,
 } from './dates.js';
 import {
   makeCal, kindLabel, buildCountdowns, eventDatesInRange, nextOccurrence, paydaysInRange, countWorkDays,
@@ -136,6 +136,152 @@ function tickAnalog() {
   $('#acM').setAttribute('transform', `rotate(${(min * 6).toFixed(2)})`);
   $('#acS').setAttribute('transform', `rotate(${sec * 6})`);
 }
+
+// ---------- Big analog clock (wide screens, under the day panel) ----------
+
+const wideMq = matchMedia('(min-width: 1400px)');
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+let bcRaf = 0;
+let bcMinute = -1;
+
+const bigClockOn = () => state.settings.bigClock && wideMq.matches;
+/** Clock-face angle (degrees from 12, clockwise) of a time of day, on a 12-hour dial. */
+const dialAngle = (d) => ((d.getHours() % 12) * 60 + d.getMinutes() + d.getSeconds() / 60) / 2;
+
+function arcPath(r, a0, span) {
+  if (span <= 0.05) return '';
+  const pt = (a) => { const t = (a * Math.PI) / 180; return `${(Math.sin(t) * r).toFixed(2)} ${(-Math.cos(t) * r).toFixed(2)}`; };
+  if (span >= 359.9) return `M ${pt(a0)} A ${r} ${r} 0 1 1 ${pt(a0 + 180)} A ${r} ${r} 0 1 1 ${pt(a0)}`;
+  return `M ${pt(a0)} A ${r} ${r} 0 ${span > 180 ? 1 : 0} 1 ${pt(a0 + span)}`;
+}
+
+function renderBigClock() {
+  const el = $('#bclock');
+  if (!bigClockOn()) { el.innerHTML = ''; stopSweep(); return; }
+  let ticks = '';
+  for (let i = 0; i < 60; i++) {
+    const kind = i % 15 === 0 ? 'q' : i % 5 === 0 ? 'h' : 'm';
+    const a = (i * 6 * Math.PI) / 180;
+    const r1 = { q: 80, h: 84, m: 90 }[kind];
+    ticks += `<line x1="${(Math.sin(a) * r1).toFixed(2)}" y1="${(-Math.cos(a) * r1).toFixed(2)}" x2="${(Math.sin(a) * 95).toFixed(2)}" y2="${(-Math.cos(a) * 95).toFixed(2)}" class="${kind}"/>`;
+  }
+  let nums = '';
+  for (let h = 1; h <= 12; h++) {
+    const a = (h * 30 * Math.PI) / 180;
+    nums += `<text x="${(Math.sin(a) * 68).toFixed(2)}" y="${(-Math.cos(a) * 68).toFixed(2)}"${h % 3 ? '' : ' class="big"'}>${h}</text>`;
+  }
+  el.innerHTML = `<svg class="bc-svg" viewBox="-114 -114 228 228" role="img" aria-label="Часы">
+    <defs><radialGradient id="bcGrad" cx="50%" cy="38%" r="70%"><stop offset="0" class="bc-g0"/><stop offset="1" class="bc-g1"/></radialGradient></defs>
+    <circle r="100" class="bc-face"/>
+    <g id="bcArc"><path class="bc-track"/><path class="bc-done"/></g>
+    <g class="bc-ticks">${ticks}</g>
+    <g class="bc-nums">${nums}</g>
+    <text y="-36" class="bc-month" id="bcMonth"></text>
+    <text y="40" class="bc-digital" id="bcDigital"></text>
+    <g class="bc-date"><rect x="27" y="-9.5" width="30" height="19" rx="4"/><text x="42" y="0.5" id="bcDate"></text></g>
+    <g id="bcDots"></g>
+    <g class="bc-hands">
+      <path id="bcH" class="bc-h" d="M -4.5 14 L -3 -46 Q 0 -54 3 -46 L 4.5 14 Z"/>
+      <path id="bcM" class="bc-m" d="M -3.2 16 L -1.8 -76 Q 0 -84 1.8 -76 L 3.2 16 Z"/>
+      <g id="bcS" class="bc-s"><line x1="0" y1="24" x2="0" y2="-90"/><circle cy="-68" r="3.6"/><circle cy="18" r="3"/></g>
+      <circle r="4.6" class="bc-pin"/><circle r="1.6" class="bc-pin2"/>
+    </g>
+  </svg>
+  <div class="bc-cap" id="bcCap"></div>`;
+  bcMinute = -1;
+  tickBigClock();
+  startSweep();
+}
+
+function setHands(t) {
+  const h = $('#bcH');
+  if (!h) return;
+  const sec = t.getSeconds() + (reduceMotion.matches ? 0 : t.getMilliseconds() / 1000);
+  const min = t.getMinutes() + sec / 60;
+  const hr = (t.getHours() % 12) + min / 60;
+  h.setAttribute('transform', `rotate(${(hr * 30).toFixed(3)})`);
+  $('#bcM').setAttribute('transform', `rotate(${(min * 6).toFixed(3)})`);
+  $('#bcS').setAttribute('transform', `rotate(${(sec * 6).toFixed(3)})`);
+}
+
+/** Once a second: work-day arc and digital readout; once a minute: date, event dots, caption. */
+function tickBigClock() {
+  if (!$('#bcH')) return;
+  if (!bcRaf) setHands(now);
+  const s = state.settings;
+  const i = cal.info(now);
+  const a = withTime(now, s.workStart);
+  const z = withTime(now, s.workEnd);
+  const work = !i.off && z > a;
+  const p = work ? Math.min(1, Math.max(0, (now - a) / (z - a))) : 0;
+  const arc = $('#bcArc');
+  arc.classList.toggle('off', i.off);
+  if (work) {
+    const a0 = dialAngle(a);
+    const span = Math.min(359.9, ((z - a) / 36e5) * 30);
+    $('.bc-track', arc).setAttribute('d', arcPath(105, a0, span));
+    $('.bc-done', arc).setAttribute('d', arcPath(105, a0, span * p));
+  } else {
+    $('.bc-track', arc).setAttribute('d', i.off ? arcPath(105, 0, 360) : '');
+    $('.bc-done', arc).setAttribute('d', '');
+  }
+  setText($('#bcDigital'), `${pad2(now.getHours())}:${pad2(now.getMinutes())}`);
+  if (now.getMinutes() === bcMinute) return;
+  bcMinute = now.getMinutes();
+  setText($('#bcMonth'), MONTHS[now.getMonth()].toUpperCase());
+  setText($('#bcDate'), `${WD_SHORT[now.getDay()].toUpperCase()} ${now.getDate()}`);
+  // today's timed events within the next 12 hours, as dots on the rim
+  const today = startOfDay(now);
+  const until = new Date(+now + 12 * 36e5);
+  const dots = [];
+  for (const ev of state.events) {
+    if (!ev.time || !eventDatesInRange(ev, today, today).length) continue;
+    const t = withTime(today, ev.time);
+    if (t < now || t >= until) continue;
+    const ang = (dialAngle(t) * Math.PI) / 180;
+    dots.push(`<circle cx="${(Math.sin(ang) * 105).toFixed(2)}" cy="${(-Math.cos(ang) * 105).toFixed(2)}" r="5" style="--c:${ev.color}"><title>${esc(`${ev.time} ${ev.title}`)}</title></circle>`);
+  }
+  $('#bcDots').innerHTML = dots.join('');
+  let text;
+  if (i.off) text = i.holiday ? i.holiday : kindLabel(i);
+  else if (!work) text = 'Рабочий день';
+  else if (now < a) text = `Рабочий день с ${s.workStart} до ${s.workEnd}`;
+  else if (p >= 1) text = `Рабочий день закончился в ${s.workEnd}`;
+  else text = `Рабочий день до ${s.workEnd} · ${Math.floor(p * 100)}%`;
+  setText($('#bcCap'), text);
+}
+
+function sweep() {
+  bcRaf = 0;
+  if (!$('#bcH') || document.hidden || $('#bclock').classList.contains('tiny')) return;
+  setHands(new Date());
+  bcRaf = requestAnimationFrame(sweep);
+}
+function startSweep() {
+  if (bcRaf || reduceMotion.matches || !$('#bcH') || $('#bclock').classList.contains('tiny')) return;
+  bcRaf = requestAnimationFrame(sweep);
+}
+function stopSweep() {
+  if (bcRaf) cancelAnimationFrame(bcRaf);
+  bcRaf = 0;
+}
+
+// The dial takes the room left under the day panel; hidden when there is too little of it.
+new ResizeObserver(() => {
+  const el = $('#bclock');
+  const cs = getComputedStyle(el);
+  const capH = $('#bcCap')?.offsetHeight || 20;
+  const w = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const h = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - capH - 10;
+  const size = Math.floor(Math.min(w, h, 440));
+  el.style.setProperty('--bc-size', `${Math.max(0, size)}px`);
+  const tiny = size < 170;
+  if (tiny === el.classList.contains('tiny')) return;
+  el.classList.toggle('tiny', tiny);
+  if (tiny) stopSweep(); else startSweep();
+}).observe($('#bclock'));
+wideMq.addEventListener?.('change', () => renderBigClock());
+reduceMotion.addEventListener?.('change', () => { stopSweep(); startSweep(); });
 
 /** Days of the current week / month: [{ d, off }] */
 function periodDays(k) {
@@ -461,6 +607,7 @@ function renderAll() {
   renderEventList();
   renderMonth();
   renderDay();
+  renderBigClock();
 }
 
 function selectDay(d, { scroll = false } = {}) {
@@ -628,6 +775,7 @@ function renderSettings() {
     </div>
     <label class="chk"><input type="checkbox" data-s="weekNumbers"${s.weekNumbers ? ' checked' : ''}> Номера недель</label>
     <label class="chk"><input type="checkbox" data-s="analogClock"${s.analogClock ? ' checked' : ''}> Аналоговые часы в «Сегодня»</label>
+    <label class="chk"><input type="checkbox" data-s="bigClock"${s.bigClock ? ' checked' : ''}> Большие часы справа (на широком экране, если помещаются)</label>
     <p class="muted small">Любой день можно сделать выходным или рабочим: выберите его в календаре.</p>
 
     <h3>Перенос между устройствами</h3>
@@ -1085,6 +1233,7 @@ function tick() {
     renderAll();
   } else {
     tickToday();
+    tickBigClock();
     tickTodayCell();
     renderCountdowns();
   }
@@ -1102,6 +1251,7 @@ function syncSoon() {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
   tick();
+  startSweep();
   checkForUpdate();
   syncSoon();
 });

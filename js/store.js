@@ -23,6 +23,7 @@ export function defaultState() {
       builtins: { payday: true, weekend: true, workday: true, holiday: true, newyear: true },
       weekNumbers: false,
       analogClock: false,
+      bigClock: true,
       theme: 'auto',
     },
   };
@@ -94,6 +95,7 @@ export function normalize(raw) {
   if (typeof s.weekNumbers === 'boolean') settings.weekNumbers = s.weekNumbers;
   // The clock was on by default in v2 (1.4.0); from v3 it is off unless turned on again.
   if (typeof s.analogClock === 'boolean' && raw.v >= 3) settings.analogClock = s.analogClock;
+  if (typeof s.bigClock === 'boolean') settings.bigClock = s.bigClock;
   if (['auto', 'light', 'dark'].includes(s.theme)) settings.theme = s.theme;
   settings.builtins = { ...d.settings.builtins };
   if (s.builtins && typeof s.builtins === 'object') {
