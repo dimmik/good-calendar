@@ -171,6 +171,8 @@ function renderBigClock() {
   // the same minute ring on both dials: short minute marks, long ones every 5 minutes
   for (let i = 0; i < 60; i++) if (i % 5) tick(i * 6, 'm', 90);
   for (let i = 0; i < 12; i++) tick(i * 30, i % 3 ? 'h' : 'q', i % 3 ? 84 : 80);
+  // 24-hour dial: short hour marks at the odd hours, inside the minute ring
+  if (d24) for (let h = 1; h < 24; h += 2) tick(h * 15, 'h', 81, 87);
   let nums = '';
   for (let h = d24 ? 0 : 1; h <= (d24 ? 23 : 12); h++) {
     const a = ((d24 ? h * 15 : h * 30) * Math.PI) / 180;
