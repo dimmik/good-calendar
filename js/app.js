@@ -168,14 +168,9 @@ function renderBigClock() {
     const a = (deg * Math.PI) / 180;
     ticks += `<line x1="${(Math.sin(a) * r1).toFixed(2)}" y1="${(-Math.cos(a) * r1).toFixed(2)}" x2="${(Math.sin(a) * r2).toFixed(2)}" y2="${(-Math.cos(a) * r2).toFixed(2)}" class="${kind}"/>`;
   };
-  if (d24) {
-    // two rings: minutes on the rim (every 5 minutes longer), hours inside, by the numerals
-    for (let i = 0; i < 60; i++) tick(i * 6, i % 5 ? 'm' : 'f', i % 5 ? 92 : 86, 96);
-    for (let h = 0; h < 24; h++) tick(h * 15, h % 6 ? 'h' : 'q', h % 6 ? 79 : 77, 84);
-  } else {
-    for (let i = 0; i < 60; i++) if (i % 5) tick(i * 6, 'm', 90);
-    for (let h = 0; h < 12; h++) tick(h * 30, h % 3 ? 'h' : 'q', h % 3 ? 84 : 80);
-  }
+  // the same minute ring on both dials: short minute marks, long ones every 5 minutes
+  for (let i = 0; i < 60; i++) if (i % 5) tick(i * 6, 'm', 90);
+  for (let i = 0; i < 12; i++) tick(i * 30, i % 3 ? 'h' : 'q', i % 3 ? 84 : 80);
   let nums = '';
   for (let h = d24 ? 0 : 1; h <= (d24 ? 23 : 12); h++) {
     const a = ((d24 ? h * 15 : h * 30) * Math.PI) / 180;
