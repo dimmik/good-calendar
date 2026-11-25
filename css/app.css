@@ -615,8 +615,6 @@ dialog.tp-dlg { width: min(340px, calc(100vw - 32px)); }
   .top-actions { gap: 2px; }
   .topbar .brand span { font-size: 16px; }
 
-  .today-tags { flex-wrap: nowrap; }
-  .chip-doy { display: none; }
   .today:not(.expanded) .bar[data-bar="month"], .today:not(.expanded) .bar[data-bar="year"] { display: none; }
   .today-more {
     display: block; margin: 8px auto -6px; padding: 4px 10px; border: 0; background: none;
@@ -645,9 +643,12 @@ dialog.tp-dlg { width: min(340px, calc(100vw - 32px)); }
   .cd-more[hidden] { display: none; }
 
   .c-merc { display: none; }
+}
 
-  /* small analog clock: right of the chips, under the digital time */
-  .today-tags { align-items: center; }
+/* small analog clock in the Today card: phones, portrait and landscape (no big clock there) */
+@media (max-width: 599px), (orientation: landscape) and (max-height: 520px) {
+  .today-tags { flex-wrap: nowrap; align-items: center; }
+  .chip-doy { display: none; }
   .today-tags .mclock {
     display: block; flex: none; margin: -12px 2px -6px auto; width: 64px; height: 64px; padding: 0;
     border: 0; background: none; cursor: pointer; border-radius: 50%; -webkit-tap-highlight-color: transparent;
