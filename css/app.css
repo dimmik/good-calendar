@@ -703,3 +703,6 @@ dialog.tp-dlg { width: min(340px, calc(100vw - 32px)); }
   margin: 2px 0 0; padding: 10px 12px; border-radius: 12px; font-size: 13.5px; line-height: 1.4;
   background: color-mix(in srgb, #f0a020 16%, var(--card)); border: 1px solid color-mix(in srgb, #f0a020 45%, var(--card));
 }
+
+.share-opts { display: grid; gap: 10px; }
+.share-opts .chk { margin: 0; }

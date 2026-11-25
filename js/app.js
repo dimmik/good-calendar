@@ -1495,19 +1495,60 @@ function loadQr() {
   return qrLoading;
 }
 
-async function openShare() {
-  const code = await encodeShare(state);
+// Shared calendars (their keys and tokens) go into the transfer link only when asked for.
+let shareSel = null; // ids of the shared calendars to include; null = none
+
+async function openShare(keepChoice = false) {
+  if (!keepChoice) shareSel = null;
+  const cals = shareSel ? state.cals.filter((m) => shareSel.has(m.id)) : [];
+  const code = await encodeShare({ ...state, cals });
   const url = shareUrl(code);
-  showLink({
+  const n = state.events.length;
+  await showLink({
     title: 'Перенести на другое устройство',
     desc: 'Откройте эту ссылку на телефоне или другом компьютере — события и настройки применятся там. Можно отсканировать QR-код камерой.',
     url,
-    size: `${state.events.length} ${plural(state.events.length, 'событие', 'события', 'событий')} · ${url.length} символов`,
+    size: `${n} ${plural(n, 'событие', 'события', 'событий')}${cals.length ? ` · ${cals.length} ${plural(cals.length, 'общий календарь', 'общих календаря', 'общих календарей')}` : ''} · ${url.length} символов`,
+    keepOpts: true,
   });
+  renderShareOpts();
 }
 
+function renderShareOpts() {
+  $('#shareOpts').hidden = !state.cals.length;
+  $('#shareCals').checked = !!shareSel;
+  const chips = $('#shareCalChips');
+  chips.hidden = !shareSel;
+  chips.innerHTML = shareSel ? state.cals.map((m) => {
+    const on = shareSel.has(m.id);
+    const s = shared.get(m.id) || {};
+    return `<button type="button" class="cal-chip shared" data-cal="${esc(m.id)}" aria-pressed="${on}" style="--c:${s.color || COLORS[1]}">
+      <i aria-hidden="true">${on ? '✓' : ''}</i>${esc(calName(m.id))}</button>`;
+  }).join('') : '';
+  const picked = shareSel ? state.cals.filter((m) => shareSel.has(m.id)).map((m) => calName(m.id)) : [];
+  const note = $('#shareCalNote');
+  note.hidden = !picked.length;
+  if (picked.length) {
+    note.innerHTML = `🔑 <b>В ссылке будут ключи и токены ${picked.length > 1 ? 'календарей' : 'календаря'} ${esc(quoteList(picked))}.</b> Кто её увидит, сможет читать и менять ${picked.length > 1 ? 'эти календари' : 'этот календарь'}. Отправляйте только себе.`;
+  }
+}
+
+$('#shareCals').addEventListener('change', (e) => {
+  shareSel = e.target.checked ? new Set(state.cals.map((m) => m.id)) : null;
+  openShare(true);
+});
+
+$('#shareCalChips').addEventListener('click', (e) => {
+  const b = e.target.closest('.cal-chip');
+  if (!b || !shareSel) return;
+  const id = b.dataset.cal;
+  if (shareSel.has(id)) shareSel.delete(id); else shareSel.add(id);
+  openShare(true);
+});
+
 /** The link dialog with a QR code (used for sharing data and for pairing devices). */
-async function showLink({ title, desc, url, size }) {
+async function showLink({ title, desc, url, size, keepOpts = false }) {
+  if (!keepOpts) $('#shareOpts').hidden = true; // the shared-calendar choice belongs to the transfer link only
   setText($('#shareTitle'), title);
   setText($('#shareDesc'), desc);
   $('#shareLink').value = url;
@@ -1548,8 +1589,10 @@ function askImport(inc) {
   const n = inc.events.length;
   const pays = inc.paydays.map((p) => `${p.title || 'выплата'} ${p.day}-го`).join(', ');
   const ov = Object.keys(inc.overrides).length;
+  const k = inc.cals.length;
   $('#impSummary').innerHTML = `В ссылке: <b>${n} ${plural(n, 'событие', 'события', 'событий')}</b>`
-    + `${pays ? `, выплаты: ${esc(pays)}` : ''}${ov ? `, ${ov} ${plural(ov, 'изменённый день', 'изменённых дня', 'изменённых дней')}` : ''} и настройки.`;
+    + `${pays ? `, выплаты: ${esc(pays)}` : ''}${ov ? `, ${ov} ${plural(ov, 'изменённый день', 'изменённых дня', 'изменённых дней')}` : ''}`
+    + `${k ? `, <b>доступ к ${k} ${plural(k, 'общему календарю', 'общим календарям', 'общим календарям')}</b>` : ''} и настройки.`;
   if ($('#setDlg').open) $('#setDlg').close();
   $('#impDlg').showModal();
 }
@@ -1563,7 +1606,13 @@ function finishImport(next, msg) {
 }
 
 $('#impMerge').addEventListener('click', () => pendingImport && finishImport(mergeStates(state, pendingImport), 'Данные объединены'));
-$('#impReplace').addEventListener('click', () => pendingImport && finishImport(replaceWith(state, pendingImport), 'Данные заменены'));
+// Replacing keeps this device's shared calendars: a link without them must not make it leave them.
+$('#impReplace').addEventListener('click', () => {
+  if (!pendingImport) return;
+  const cals = new Map(state.cals.map((m) => [m.id, m]));
+  for (const m of pendingImport.cals) cals.set(m.id, m);
+  finishImport(replaceWith(state, { ...pendingImport, cals: [...cals.values()] }), 'Данные заменены');
+});
 
 function clearHash() {
   history.replaceState(null, '', location.pathname + location.search);
@@ -1690,7 +1739,7 @@ document.addEventListener('click', (e) => {
 });
 
 $('#addBtn').addEventListener('click', () => openEvent(null, selected));
-$('#shareBtn').addEventListener('click', openShare);
+$('#shareBtn').addEventListener('click', () => openShare());
 $('#settingsBtn').addEventListener('click', () => { renderSettings(); $('#setDlg').showModal(); });
 
 document.addEventListener('keydown', (e) => {

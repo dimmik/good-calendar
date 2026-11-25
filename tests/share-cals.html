@@ -1,0 +1,57 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Transfer link and shared calendars</title>
+<pre id="out">running…</pre>
+<iframe id="f" width="420" height="900"></iframe>
+<script type="module">
+// Dev helper (fresh profile only: overwrites local data): the transfer link carries shared calendars
+// only when asked, and "Заменить" keeps the receiving device's ones.
+import { decodeShare } from '../js/store.js';
+
+const results = [];
+const eq = (name, got, want) => results.push([JSON.stringify(got) === JSON.stringify(want), name, got, want]);
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const mem = (id) => ({ id, repo: 'someone/data', path: `cal/${id}.enc`, token: 'github_pat_' + 'x'.repeat(40), key: 'k'.repeat(43), u: 1 });
+localStorage.setItem('good-calendar:v1', JSON.stringify({ v: 3, events: [], cals: [mem('fam'), mem('hike')] }));
+const f = document.getElementById('f');
+await new Promise((r) => { f.addEventListener('load', r, { once: true }); f.src = '../'; });
+await wait(600);
+const d = f.contentDocument;
+const w = f.contentWindow;
+const link = async () => (await decodeShare(d.getElementById('shareLink').value)).cals.map((m) => m.id);
+try {
+  d.getElementById('shareBtn').click();
+  await wait(300);
+  eq('option shown', d.getElementById('shareOpts').hidden, false);
+  eq('off by default: no shared calendars in the link', await link(), []);
+  d.getElementById('shareCals').click();
+  await wait(300);
+  eq('on: all of them', (await link()).sort(), ['fam', 'hike']);
+  d.querySelector('#shareCalChips .cal-chip[data-cal="hike"]').click();
+  await wait(300);
+  eq('chips pick which', await link(), ['fam']);
+  d.getElementById('shareDlg').close();
+  d.getElementById('shareBtn').click();
+  await wait(300);
+  eq('reopened: off again', [d.getElementById('shareCals').checked, await link()], [false, []]);
+  d.getElementById('shareDlg').close();
+  // replace with a link that has no shared calendars: this device keeps its own
+  const noCals = d.getElementById('shareLink').value;
+  d.getElementById('pasteLink') || d.getElementById('settingsBtn').click();
+  d.getElementById('pasteLink').value = noCals;
+  d.querySelector('[data-act="paste-apply"]').click();
+  await wait(400);
+  d.getElementById('impReplace').click();
+  await wait(300);
+  eq('replace keeps shared calendars', JSON.parse(w.localStorage.getItem('good-calendar:v1')).cals.map((m) => m.id).sort(), ['fam', 'hike']);
+  d.getElementById('settingsBtn').click();
+  d.querySelector('.cal-row[data-cid="fam"] [data-act="cal-invite"]').click();
+  await wait(300);
+  eq('invitation dialog has no transfer option', [d.getElementById('shareTitle').textContent, d.getElementById('shareOpts').hidden], ['Пригласить в «Общий календарь»', true]);
+} catch (e) {
+  results.push([false, 'exception', String(e && e.message), '']);
+}
+const fails = results.filter((r) => !r[0]);
+document.getElementById('out').textContent = `${results.length - fails.length}/${results.length} passed\n`
+  + fails.map((x) => `FAIL ${x[1]}: got ${JSON.stringify(x[2])}, want ${JSON.stringify(x[3])}`).join('\n');
+</script>

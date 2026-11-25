@@ -7,6 +7,7 @@
 <iframe id="a" width="420" height="900"></iframe>
 <iframe id="b" width="420" height="900"></iframe>
 <iframe id="c" width="1100" height="900"></iframe>
+<iframe id="d" width="420" height="900"></iframe>
 <script type="module">
 const day = (off) => { const t = new Date(); t.setDate(t.getDate() + off); return t.toISOString().slice(0, 10); };
 const mem = (id) => ({ id, repo: 'someone/data', path: `cal/${id}.enc`, token: 'github_pat_' + 'x'.repeat(40), key: 'k'.repeat(43), u: 1 });
@@ -15,11 +16,16 @@ localStorage.setItem('good-calendar:v1', JSON.stringify({ v: 3, events: [ev('p1'
 localStorage.setItem('good-calendar:cal:fam', JSON.stringify({ v: 1, id: 'fam', name: 'Семья', color: '#c64fbf', metaU: 1, events: [ev('f1', 'Термы', 3, '10:00', '♨️'), ev('f2', 'Ёлка у родителей', 8)], deleted: {} }));
 localStorage.setItem('good-calendar:cal:hike', JSON.stringify({ v: 1, id: 'hike', name: 'Поход', color: '#2f9e5b', metaU: 1, events: [ev('h1', 'Фрушка-Гора: Иришки Венац', 5, '08:00', '🥾')], deleted: {} }));
 const load = (id) => new Promise((r) => { const f = document.getElementById(id); f.addEventListener('load', r, { once: true }); f.src = '../'; });
-await Promise.all(['a', 'b', 'c'].map(load));
+await Promise.all(['a', 'b', 'c', 'd'].map(load));
 await new Promise((r) => setTimeout(r, 700));
 const doc = (id) => document.getElementById(id).contentDocument;
 doc('a').getElementById('settingsBtn').click();
 doc('a').querySelectorAll('#setBody h3').forEach((h) => { if (h.textContent === 'Общие календари') h.scrollIntoView(); });
 doc('b').getElementById('addBtn').click();
 doc('b').querySelector('.cal-chip[data-cal="fam"]').click();
+doc('d').getElementById('shareBtn').click();
+await new Promise((r) => setTimeout(r, 300));
+doc('d').getElementById('shareCals').click();
+await new Promise((r) => setTimeout(r, 300));
+doc('d').querySelector('#shareCalChips .cal-chip[data-cal="hike"]').click();
 </script>

@@ -126,6 +126,11 @@
     <div class="dlg-body">
       <h2 id="shareTitle">Перенести на другое устройство</h2>
       <p class="muted" id="shareDesc">Откройте эту ссылку на телефоне или другом компьютере — события и настройки применятся там. Можно отсканировать QR-код камерой.</p>
+      <div class="share-opts" id="shareOpts" hidden>
+        <label class="chk"><input type="checkbox" id="shareCals"> Перенести также общие календари</label>
+        <div class="cal-chips" id="shareCalChips" role="group" aria-label="Какие общие календари перенести" hidden></div>
+        <p class="cal-note" id="shareCalNote" hidden></p>
+      </div>
       <div class="qr" id="qr"></div>
       <div class="linkrow">
         <input id="shareLink" readonly aria-label="Ссылка">
@@ -144,7 +149,7 @@
     <div class="dlg-body">
       <h2>Применить данные из ссылки?</h2>
       <p id="impSummary"></p>
-      <p class="muted small"><b>Объединить</b> — добавит и обновит события из ссылки, ваши остальные останутся.<br><b>Заменить</b> — сделает всё точно как в ссылке.</p>
+      <p class="muted small"><b>Объединить</b> — добавит и обновит события из ссылки, ваши остальные останутся.<br><b>Заменить</b> — сделает всё точно как в ссылке; общие календари этого устройства останутся.</p>
       <div class="dlg-actions">
         <button class="btn" data-close>Отмена</button>
         <span class="sp"></span>
