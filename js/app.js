@@ -93,6 +93,7 @@ function renderToday() {
       <span class="chip ${i.off ? 'chip-off' : 'chip-work'}">${esc(kindLabel(i))}</span>
       <span class="chip">неделя ${isoWeek(now)}</span>
       <span class="chip chip-doy">день ${dayOfYear(now)} из ${daysInYear(y)}</span>
+      ${state.settings.bigClock ? miniClockSvg() : ''}
     </div>
     <div class="today-tiles" id="todayTiles"></div>
     <div class="bars" id="bars">
@@ -106,6 +107,7 @@ function renderToday() {
   $('#today').classList.toggle('expanded', todayExpanded);
   tickToday();
   renderTiles(true);
+  tickMiniClock(true);
 }
 
 // Phone: the Today card is compact (month and year bars on demand) and shows the nearest countdowns as tiles.
@@ -268,11 +270,50 @@ function renderBigClock() {
 
 /** The second hand sweeps by a CSS animation (cheap); this sets its phase to the real clock. */
 function syncSecondHand() {
-  const s = $('#bcS');
-  if (!s) return;
   const t = new Date();
-  s.classList.toggle('sweep', !reduceMotion.matches);
-  s.style.animationDelay = `-${(t.getSeconds() + t.getMilliseconds() / 1000).toFixed(3)}s`;
+  for (const s of $$('#bcS, #mcS')) {
+    s.classList.toggle('sweep', !reduceMotion.matches);
+    s.style.animationDelay = `-${(t.getSeconds() + t.getMilliseconds() / 1000).toFixed(3)}s`;
+  }
+}
+
+// ---------- Small analog clock in the Today card (phones; the big one is for wide screens) ----------
+
+let mcMinute = -1;
+function miniClockSvg() {
+  const d24 = dial24();
+  let ticks = '';
+  for (let h = 0; h < (d24 ? 24 : 12); h++) {
+    const q = h % (d24 ? 6 : 3) === 0;
+    const a = ((h * (d24 ? 15 : 30)) * Math.PI) / 180;
+    const r1 = q ? 66 : 76;
+    ticks += `<line x1="${(Math.sin(a) * r1).toFixed(1)}" y1="${(-Math.cos(a) * r1).toFixed(1)}" x2="${(Math.sin(a) * 86).toFixed(1)}" y2="${(-Math.cos(a) * 86).toFixed(1)}" class="${q ? 'q' : 'h'}"/>`;
+  }
+  return `<svg class="mclock" viewBox="-114 -114 228 228" aria-hidden="true">
+    <circle r="100" class="mc-face"/>
+    <g id="mcSky"></g>
+    <g class="mc-ticks">${ticks}</g>
+    <g id="mcArc" class="mc-arc"><path class="bc-track"/><path class="bc-done"/></g>
+    <path id="mcH" class="bc-h" d="M -8 14 L -6 -40 Q 0 -50 6 -40 L 8 14 Z"/>
+    <path id="mcM" class="bc-m" d="M -5.5 16 L -3.5 -68 Q 0 -78 3.5 -68 L 5.5 16 Z"/>
+    <g id="mcS" class="bc-s mc-s"><line x1="0" y1="22" x2="0" y2="-84"/></g>
+    <circle r="8" class="bc-pin"/><circle r="3" class="bc-pin2"/>
+  </svg>`;
+}
+
+function tickMiniClock(force = false) {
+  const svg = $('.mclock');
+  if (!svg || (!force && !svg.getClientRects().length)) return; // not shown (wide screen)
+  const sec = now.getSeconds();
+  const min = now.getMinutes() + sec / 60;
+  $('#mcH').setAttribute('transform', `rotate(${dialAngle(now).toFixed(2)})`);
+  $('#mcM').setAttribute('transform', `rotate(${(min * 6).toFixed(2)})`);
+  if (reduceMotion.matches) $('#mcS').setAttribute('transform', `rotate(${sec * 6})`);
+  drawWorkArc($('#mcArc'), 106);
+  if (!force && now.getMinutes() === mcMinute) return;
+  mcMinute = now.getMinutes();
+  $('#mcSky').innerHTML = skyArcs(93);
+  syncSecondHand();
 }
 
 function setHands(t) {
@@ -287,26 +328,44 @@ function setHands(t) {
 }
 
 /** Once a second: work-day arc and digital readout; once a minute: date, event dots, caption. */
-function tickBigClock() {
-  if (!$('#bcH')) return;
-  setHands(now);
+/** Today's working hours on a dial: { info, work, a, z, p } plus the arc drawn into `arc` at radius r. */
+function drawWorkArc(arc, r) {
   const s = state.settings;
   const i = cal.info(now);
   const a = withTime(now, s.workStart);
   const z = withTime(now, s.workEnd);
   const work = !i.off && z > a;
   const p = work ? Math.min(1, Math.max(0, (now - a) / (z - a))) : 0;
-  const arc = $('#bcArc');
   arc.classList.toggle('off', i.off);
   if (work) {
     const a0 = dialAngle(a);
     const span = Math.min(359.9, ((z - a) / 36e5) * (dial24() ? 15 : 30));
-    $('.bc-track', arc).setAttribute('d', arcPath(105, a0, span));
-    $('.bc-done', arc).setAttribute('d', arcPath(105, a0, span * p));
+    $('.bc-track', arc).setAttribute('d', arcPath(r, a0, span));
+    $('.bc-done', arc).setAttribute('d', arcPath(r, a0, span * p));
   } else {
-    $('.bc-track', arc).setAttribute('d', i.off ? arcPath(105, 0, 360) : '');
+    $('.bc-track', arc).setAttribute('d', i.off ? arcPath(r, 0, 360) : '');
     $('.bc-done', arc).setAttribute('d', '');
   }
+  return { i, work, a, z, p };
+}
+
+/** Daylight, twilight and night as arcs: the whole day on a 24-hour dial, the next 12 hours on a 12-hour one. */
+function skyArcs(r) {
+  const pl = placeOf(state.settings, geo);
+  const today = startOfDay(now);
+  const from = dial24() ? today : now;
+  const to = dial24() ? addDays(today, 1) : new Date(+now + 12 * 36e5);
+  return skyIntervals(from, to, pl.lat, pl.lon).map((iv) => {
+    const span = ((iv.to - iv.from) / 6e4) * (dial24() ? 0.25 : 0.5);
+    return `<path class="sky-${iv.kind}" d="${arcPath(r, dialAngle(iv.from), Math.min(span, 359.99))}"/>`;
+  }).join('');
+}
+
+function tickBigClock() {
+  if (!$('#bcH')) return;
+  setHands(now);
+  const s = state.settings;
+  const { i, work, a, p } = drawWorkArc($('#bcArc'), 105);
   setText($('#bcDigital'), `${pad2(now.getHours())}:${pad2(now.getMinutes())}`);
   if (now.getMinutes() === bcMinute) return;
   bcMinute = now.getMinutes();
@@ -326,14 +385,8 @@ function tickBigClock() {
     dots.push(`<circle${t < now ? ' class="past"' : ''} cx="${(Math.sin(ang) * 105).toFixed(2)}" cy="${(-Math.cos(ang) * 105).toFixed(2)}" r="5" style="--c:${ev.color}"><title>${esc(`${ev.time} ${ev.title}`)}</title></circle>`);
   }
   $('#bcDots').innerHTML = dots.join('');
-  // daylight, twilight and night: the whole day on a 24-hour dial, the next 12 hours on a 12-hour one
+  $('#bcSky').innerHTML = skyArcs(93.5);
   const pl = placeOf(s, geo);
-  const from = dial24() ? today : now;
-  const to = dial24() ? addDays(today, 1) : until;
-  $('#bcSky').innerHTML = skyIntervals(from, to, pl.lat, pl.lon).map((iv) => {
-    const span = ((iv.to - iv.from) / 6e4) * (dial24() ? 0.25 : 0.5);
-    return `<path class="sky-${iv.kind}" d="${arcPath(93.5, dialAngle(iv.from), Math.min(span, 359.99))}"/>`;
-  }).join('');
   const st = sunTimes(today, pl.lat, pl.lon);
   const hhmm = (t) => `${pad2(t.getHours())}:${pad2(t.getMinutes())}`;
   setText($('#bcSun'), st.sunrise && st.sunset
@@ -881,7 +934,7 @@ function renderSettings() {
       <p class="small" style="margin:2px 0 6px">${esc(placeText())}</p>
       <div class="btn-row"><button class="btn small" data-act="geo-locate">Определить по геолокации</button>${validGeo(geo) ? '<button class="btn small ghost" data-act="geo-reset">По стране</button>' : ''}</div>
     </div>
-    <label class="chk"><input type="checkbox" data-s="bigClock"${s.bigClock ? ' checked' : ''}> Большие часы справа (на широком экране, если помещаются)</label>
+    <label class="chk"><input type="checkbox" data-s="bigClock"${s.bigClock ? ' checked' : ''}> Аналоговые часы с дугой рабочего дня и небом: большие справа на широком экране, маленькие в «Сегодня» на телефоне</label>
     <p class="muted small">Любой день можно сделать выходным или рабочим: выберите его в календаре.</p>
 
     <h3>Перенос между устройствами</h3>
@@ -1362,6 +1415,7 @@ function tick() {
   } else {
     tickToday();
     tickBigClock();
+    tickMiniClock();
     tickTodayCell();
     renderCountdowns();
   }

@@ -595,7 +595,7 @@ dialog.tp-dlg { width: min(340px, calc(100vw - 32px)); }
 }
 
 /* ---------- Big clock: sweeping second hand ---------- */
-#bcS.sweep { animation: bc-sec 60s linear infinite; }
+#bcS.sweep, #mcS.sweep { animation: bc-sec 60s linear infinite; }
 @keyframes bc-sec { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .bclock.tiny #bcS { animation-play-state: paused; }
 
@@ -615,7 +615,7 @@ dialog.tp-dlg { width: min(340px, calc(100vw - 32px)); }
   .top-actions { gap: 2px; }
   .topbar .brand span { font-size: 16px; }
 
-  .today-tags { flex-wrap: nowrap; overflow: hidden; }
+  .today-tags { flex-wrap: nowrap; }
   .chip-doy { display: none; }
   .today:not(.expanded) .bar[data-bar="month"], .today:not(.expanded) .bar[data-bar="year"] { display: none; }
   .today-more {
@@ -645,4 +645,22 @@ dialog.tp-dlg { width: min(340px, calc(100vw - 32px)); }
   .cd-more[hidden] { display: none; }
 
   .c-merc { display: none; }
+
+  /* small analog clock: right of the chips, under the digital time */
+  .today-tags { align-items: center; }
+  .today-tags .mclock { display: block; flex: none; margin: -12px 2px -6px auto; width: 64px; height: 64px; overflow: visible; }
 }
+.mclock { display: none; }
+.mc-face { fill: var(--card2); stroke: var(--line); stroke-width: 3; }
+#mcSky path { fill: none; stroke-width: 15; stroke-linecap: butt; }
+#mcSky .sky-day { stroke: var(--sky-day); }
+#mcSky .sky-twilight { stroke: var(--sky-tw); }
+#mcSky .sky-night { stroke: var(--sky-night); }
+.mc-ticks line { stroke: var(--text); stroke-linecap: round; }
+.mc-ticks .h { stroke-width: 4; stroke-opacity: .45; }
+.mc-ticks .q { stroke-width: 7; stroke-opacity: .85; }
+.mc-arc path { fill: none; stroke-width: 9; stroke-linecap: round; }
+.mc-arc .bc-track { stroke: var(--accent); stroke-opacity: .18; }
+.mc-arc .bc-done { stroke: var(--accent); }
+.mc-arc.off .bc-track { stroke: var(--off); stroke-opacity: .22; }
+.mc-s line { stroke-width: 3; }
