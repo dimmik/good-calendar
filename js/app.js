@@ -992,16 +992,48 @@ function applyTheme() {
 
 let editingId = null;
 let editingCal = '';
+let evCals = new Set(); // calendars chosen in the event dialog ('' = personal)
+
+const calName = (id) => (id ? (shared.get(id) || {}).name || 'Общий' : 'Мой');
+const quoteList = (names) => names.map((n) => `«${n}»`).join(', ').replace(/, ([^,]*)$/, ' и $1');
+
+/** Calendar chips, the "goes to other people" note and the save button follow the choice. */
+function renderEvCals() {
+  const ids = ['', ...state.cals.map((m) => m.id)];
+  $('#evCals').innerHTML = ids.map((id) => {
+    const on = evCals.has(id);
+    const color = id ? (shared.get(id) || {}).color || COLORS[1] : 'var(--muted)';
+    return `<button type="button" class="cal-chip${id ? ' shared' : ''}" data-cal="${esc(id)}" aria-pressed="${on}" style="--c:${color}">
+      <i aria-hidden="true">${on ? '✓' : ''}</i>${esc(calName(id))}${id ? '<b aria-hidden="true">🔗</b>' : ''}</button>`;
+  }).join('');
+  const others = [...evCals].filter(Boolean);
+  const note = $('#evCalNote');
+  note.hidden = !others.length;
+  if (others.length) {
+    const names = quoteList(others.map(calName));
+    note.innerHTML = `🔗 <b>Это увидят и смогут менять другие люди</b> — все участники ${others.length > 1 ? 'календарей' : 'календаря'} ${esc(names)}.`
+      + (evCals.has('') ? ' В «Мой» попадёт отдельная копия.' : '')
+      + (editingId && others.length > 1 ? ' В каждый календарь — своя копия.' : '');
+  }
+  $('#evColors').hidden = !evCals.has(''); // shared calendars paint events in their own colour
+  setText($('#evSave'), others.length ? 'Сохранить и отправить' : 'Сохранить');
+}
+
+$('#evCals').addEventListener('click', (e) => {
+  const b = e.target.closest('.cal-chip');
+  if (!b) return;
+  const id = b.dataset.cal;
+  if (evCals.has(id)) evCals.delete(id); else evCals.add(id);
+  renderEvCals();
+});
 
 function openEvent(ev, date) {
   editingId = ev ? ev.id : null;
   editingCal = ev ? ev.cal || '' : '';
-  const calSel = $('#evCal');
-  const lastCal = state.cals.some((m) => m.id === uiPrefs.lastCal) ? uiPrefs.lastCal : '';
-  calSel.innerHTML = `<option value="">Мой</option>${state.cals.map((m) => `<option value="${esc(m.id)}">${esc((shared.get(m.id) || {}).name || 'Общий')}</option>`).join('')}`;
-  calSel.value = ev ? editingCal : lastCal;
+  const known = new Set(['', ...state.cals.map((m) => m.id)]);
+  const last = (Array.isArray(uiPrefs.lastCals) ? uiPrefs.lastCals : []).filter((id) => known.has(id));
+  evCals = new Set(ev ? [editingCal] : last.length ? last : ['']);
   $('#evCalFld').hidden = !state.cals.length;
-  $('#evColors').hidden = !!calSel.value;
   const f = $('#evForm');
   $('#evDlgTitle').textContent = ev ? 'Событие' : 'Новое событие';
   f.title.value = ev ? ev.title : '';
@@ -1014,6 +1046,7 @@ function openEvent(ev, date) {
   const color = ev && !ev.cal ? ev.color : COLORS[state.events.length % COLORS.length];
   $('#evColors').innerHTML = COLORS.map((c) => `<label class="sw"><input type="radio" name="color" value="${c}"${c === color ? ' checked' : ''}><span style="--c:${c}"></span></label>`).join('');
   $('#evDelete').hidden = !ev;
+  renderEvCals();
   $('#evDlg').showModal();
   if (!ev) f.title.focus();
 }
@@ -1024,9 +1057,6 @@ function showEvTime() {
   b.textContent = v || 'весь день';
   b.classList.toggle('empty', !v);
 }
-
-// a shared calendar paints its events in its own colour
-$('#evCal').addEventListener('change', (e) => { $('#evColors').hidden = !!e.target.value; });
 
 $('#evTimeBtn').addEventListener('click', async () => {
   const f = $('#evForm');
@@ -1052,19 +1082,23 @@ $('#evForm').addEventListener('submit', (e) => {
     u: Date.now(),
   });
   if (!ev) { toast('Проверьте название и дату'); return; }
-  const target = state.cals.some((m) => m.id === f.cal.value) ? f.cal.value : '';
+  const targets = ['', ...state.cals.map((m) => m.id)].filter((id) => evCals.has(id));
+  if (!targets.length) { toast('Выберите хотя бы один календарь'); return; }
   const existed = !!editingId;
-  if (existed && editingCal !== target) removeEvent(editingCal, ev.id); // moved to another calendar
-  putEvent(target, ev);
-  uiPrefs.lastCal = target;
-  saveUi();
+  // the event keeps its id in its own calendar; every other chosen calendar gets an independent copy
+  if (existed && !targets.includes(editingCal)) removeEvent(editingCal, ev.id);
+  for (const id of targets) {
+    putEvent(id, existed && id === editingCal ? ev : { ...ev, id: newId() });
+  }
+  if (!existed) { uiPrefs.lastCals = targets; saveUi(); }
   $('#evDlg').close();
   selected = parseYmd(ev.date);
   const occ = nextOccurrence(ev, now);
   if (occ) selected = occ.day;
   view = { y: selected.getFullYear(), m: selected.getMonth() };
   commit();
-  toast(existed ? 'Сохранено' : 'Событие добавлено');
+  const sent = targets.filter(Boolean);
+  toast(sent.length ? `${existed ? 'Сохранено' : 'Добавлено'} и отправлено в ${quoteList(sent.map(calName))}` : existed ? 'Сохранено' : 'Событие добавлено');
 });
 
 $('#evDelete').addEventListener('click', () => {

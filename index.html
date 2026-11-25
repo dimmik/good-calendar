@@ -93,7 +93,10 @@
         <label class="fld"><span>Дата</span><input type="date" name="date" required></label>
         <label class="fld"><span>Время <em>необязательно</em></span><input type="hidden" name="time"><button type="button" class="time-field" id="evTimeBtn"></button></label>
       </div>
-      <label class="fld" id="evCalFld" hidden><span>Календарь</span><select name="cal" id="evCal"></select></label>
+      <div class="fld" id="evCalFld" hidden><span>Календарь <em>можно несколько</em></span>
+        <div class="cal-chips" id="evCals" role="group" aria-label="Календари"></div>
+        <p class="cal-note" id="evCalNote" hidden></p>
+      </div>
       <label class="fld"><span>Повтор</span>
         <select name="repeat">
           <option value="none">Не повторять</option>
@@ -110,7 +113,7 @@
         <button type="button" class="btn ghost danger" id="evDelete">Удалить</button>
         <span class="sp"></span>
         <button type="button" class="btn" data-close>Отмена</button>
-        <button type="submit" class="btn primary">Сохранить</button>
+        <button type="submit" class="btn primary" id="evSave">Сохранить</button>
       </div>
     </form>
   </dialog>

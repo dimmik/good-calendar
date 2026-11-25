@@ -21,4 +21,5 @@ const doc = (id) => document.getElementById(id).contentDocument;
 doc('a').getElementById('settingsBtn').click();
 doc('a').querySelectorAll('#setBody h3').forEach((h) => { if (h.textContent === 'Общие календари') h.scrollIntoView(); });
 doc('b').getElementById('addBtn').click();
+doc('b').querySelector('.cal-chip[data-cal="fam"]').click();
 </script>

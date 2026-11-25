@@ -1,0 +1,27 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Overflow check</title>
+<pre id="out">running…</pre>
+<iframe id="f" src="../" width="1280" height="900"></iframe>
+<script type="module">
+// Dev helper: opens the dialogs and lists elements sticking out of them to the right (horizontal scroll).
+const f = document.getElementById('f');
+await new Promise((r) => f.addEventListener('load', r, { once: true }));
+await new Promise((r) => setTimeout(r, 600));
+const d = f.contentDocument;
+const lines = [];
+const check = (dlg) => {
+  const box = dlg.getBoundingClientRect();
+  lines.push(`${dlg.id}: client ${dlg.clientWidth} scroll ${dlg.scrollWidth}`);
+  for (const el of dlg.querySelectorAll('*')) {
+    const r = el.getBoundingClientRect();
+    if (r.width && r.right > box.right - 1) lines.push(`  ${el.tagName.toLowerCase()}.${[...el.classList].join('.')}#${el.id} right ${Math.round(r.right - box.left)} w ${Math.round(r.width)}`);
+  }
+};
+d.getElementById('addBtn').click();
+check(d.getElementById('evDlg'));
+d.getElementById('evDlg').close();
+d.getElementById('settingsBtn').click();
+check(d.getElementById('setDlg'));
+document.getElementById('out').textContent = lines.join('\n');
+</script>

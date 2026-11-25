@@ -485,7 +485,8 @@ dialog p { margin: 0; }
 
 .colors-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .colors { display: flex; gap: 8px; flex-wrap: wrap; }
-.sw input { position: absolute; opacity: 0; pointer-events: none; }
+.sw { position: relative; }
+.sw input { position: absolute; inset: 0; width: 1px; height: 1px; margin: 0; padding: 0; opacity: 0; pointer-events: none; }
 .sw span { display: block; width: 32px; height: 32px; border-radius: 50%; background: var(--c); cursor: pointer; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .0); }
 .sw input:checked + span { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--c); }
 .sw input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 4px; }
@@ -682,3 +683,23 @@ dialog.tp-dlg { width: min(340px, calc(100vw - 32px)); }
 .cal-meta { margin: 4px 0 6px; }
 .cal-new { margin: 10px 0; }
 .cal-new > summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+
+/* ---------- Calendar chips in the event dialog ---------- */
+.cal-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.cal-chip {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 14px 0 8px;
+  border: 1.5px solid var(--line); border-radius: 999px; background: var(--card2);
+  font: inherit; font-size: 15px; font-weight: 600; color: var(--text); cursor: pointer;
+}
+.cal-chip i {
+  display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  border: 2px solid var(--c); font-style: normal; font-size: 13px; font-weight: 800; color: #fff;
+}
+.cal-chip b { font-size: 13px; opacity: .55; }
+.cal-chip[aria-pressed="true"] { border-color: var(--c); background: color-mix(in srgb, var(--c) 14%, var(--card)); }
+.cal-chip[aria-pressed="true"] i { background: var(--c); }
+.cal-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.cal-note {
+  margin: 2px 0 0; padding: 10px 12px; border-radius: 12px; font-size: 13.5px; line-height: 1.4;
+  background: color-mix(in srgb, #f0a020 16%, var(--card)); border: 1px solid color-mix(in srgb, #f0a020 45%, var(--card));
+}

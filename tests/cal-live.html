@@ -54,9 +54,10 @@ try {
   const f = d.getElementById('evForm');
   eq('calendar choice shown in the event dialog', d.getElementById('evCalFld').hidden, false);
   f.title.value = 'Термы';
-  f.cal.value = member.id;
-  f.cal.dispatchEvent(new Event('change'));
+  d.querySelector('.cal-chip[data-cal=""]').click(); // off "Мой"
+  d.querySelector(`.cal-chip[data-cal="${member.id}"]`).click();
   eq('colour hidden for a shared calendar', d.getElementById('evColors').hidden, true);
+  eq('warning that others will see it', [d.getElementById('evCalNote').hidden, d.getElementById('evSave').textContent], [false, 'Сохранить и отправить']);
   f.requestSubmit();
   const r1 = await until(async () => { const r = await getRemote(member, unpack); return r && r.state.events.some((e) => e.title === 'Термы') && r; });
   eq('event pushed to the shared file', !!r1, true);
