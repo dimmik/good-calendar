@@ -15,6 +15,7 @@ import {
   DEFAULT_PATH, SYNC_PARAM,
 } from './sync.js';
 
+import { placeOf, PLACES, sunTimes, skyIntervals, retrogradeDay } from './astro.js';
 import { VERSION } from './version.js';
 import { pickTime } from './timepicker.js';
 
@@ -159,6 +160,13 @@ function arcPath(r, a0, span) {
   return `M ${pt(a0)} A ${r} ${r} 0 ${span > 180 ? 1 : 0} 1 ${pt(a0 + span)}`;
 }
 
+function placeText() {
+  const s = state.settings;
+  const p = placeOf(s);
+  const coords = `${p.lat.toFixed(2)}, ${p.lon.toFixed(2)}`;
+  return s.geo ? `По геолокации: ${coords}` : `${(PLACES[s.country] || PLACES.rs).name} (по стране календаря): ${coords}`;
+}
+
 function renderBigClock() {
   const el = $('#bclock');
   if (!bigClockOn()) { el.innerHTML = ''; stopSweep(); return; }
@@ -184,6 +192,7 @@ function renderBigClock() {
   <svg class="bc-svg${d24 ? ' d24' : ''}" viewBox="-114 -114 228 228" role="img" aria-label="Часы">
     <defs><radialGradient id="bcGrad" cx="50%" cy="38%" r="70%"><stop offset="0" class="bc-g0"/><stop offset="1" class="bc-g1"/></radialGradient></defs>
     <circle r="100" class="bc-face"/>
+    <g id="bcSky"></g>
     <g id="bcArc"><path class="bc-track"/><path class="bc-done"/></g>
     <g class="bc-ticks">${ticks}</g>
     <g class="bc-nums">${nums}</g>
@@ -198,7 +207,7 @@ function renderBigClock() {
       <circle r="4.6" class="bc-pin"/><circle r="1.6" class="bc-pin2"/>
     </g>
   </svg>
-  <div class="bc-cap" id="bcCap"></div>`;
+  <div class="bc-cap" id="bcCap"></div><div class="bc-sun" id="bcSun"></div>`;
   bcMinute = -1;
   tickBigClock();
   startSweep();
@@ -254,6 +263,19 @@ function tickBigClock() {
     dots.push(`<circle${t < now ? ' class="past"' : ''} cx="${(Math.sin(ang) * 105).toFixed(2)}" cy="${(-Math.cos(ang) * 105).toFixed(2)}" r="5" style="--c:${ev.color}"><title>${esc(`${ev.time} ${ev.title}`)}</title></circle>`);
   }
   $('#bcDots').innerHTML = dots.join('');
+  // daylight, twilight and night: the whole day on a 24-hour dial, the next 12 hours on a 12-hour one
+  const pl = placeOf(s);
+  const from = dial24() ? today : now;
+  const to = dial24() ? addDays(today, 1) : until;
+  $('#bcSky').innerHTML = skyIntervals(from, to, pl.lat, pl.lon).map((iv) => {
+    const span = ((iv.to - iv.from) / 6e4) * (dial24() ? 0.25 : 0.5);
+    return `<path class="sky-${iv.kind}" d="${arcPath(93.5, dialAngle(iv.from), Math.min(span, 359.99))}"/>`;
+  }).join('');
+  const st = sunTimes(today, pl.lat, pl.lon);
+  const hhmm = (t) => `${pad2(t.getHours())}:${pad2(t.getMinutes())}`;
+  setText($('#bcSun'), st.sunrise && st.sunset
+    ? `Восход ${hhmm(st.sunrise)} · закат ${hhmm(st.sunset)}${st.dusk ? ` · темно с ${hhmm(st.dusk)}` : ''}`
+    : st.polar === 'day' ? 'Полярный день' : 'Полярная ночь');
   let text;
   if (i.off) text = i.holiday ? i.holiday : kindLabel(i);
   else if (!work) text = 'Рабочий день';
@@ -289,7 +311,7 @@ $('#bclock').addEventListener('click', (e) => {
 new ResizeObserver(() => {
   const el = $('#bclock');
   const cs = getComputedStyle(el);
-  const capH = $('#bcCap')?.offsetHeight || 20;
+  const capH = ($('#bcCap')?.offsetHeight || 20) + ($('#bcSun')?.offsetHeight || 18) + 4;
   const w = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
   const h = el.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - capH - 10;
   const size = Math.floor(Math.min(w, h, 440));
@@ -531,12 +553,15 @@ function renderMonth() {
       if (!inf.off && inf.key < todayKey) cls.push('past');
       if (!inf.off && inf.key === todayKey) cls.push('wnow');
       if (inf.key === selKey) cls.push('sel');
+      const merc = retrogradeDay(d);
+      if (merc) cls.push('merc');
       const label = `${d.getDate()} ${MONTHS_GEN[d.getMonth()]}, ${kindLabel(inf)}${mk.length ? `, ${mk.map((x) => x.title).join(', ')}` : ''}`;
       const chips = mk.slice(0, 3).map((x) => `<span class="chip-ev" style="--c:${x.color}">${x.emoji ? `${esc(x.emoji)} ` : ''}${x.time ? `<b>${x.time}</b> ` : ''}${esc(x.title)}</span>`).join('')
         + (mk.length > 3 ? `<span class="chip-more">ещё ${mk.length - 3}</span>` : '');
       const dots = mk.slice(0, 4).map((x) => (x.kind === 'pay' ? '<i class="dot-pay">₽</i>' : `<i style="--c:${x.color}"></i>`)).join('');
       html += `<button class="${cls.join(' ')}" data-day="${inf.key}" aria-label="${esc(label)}"${inf.key === selKey ? ' aria-pressed="true"' : ''}>
         <span class="c-num">${d.getDate()}</span>
+        ${merc ? '<span class="c-merc" title="Ретроградный Меркурий">☿</span>' : ''}
         ${inf.holiday && inf.off ? `<span class="c-hol">${esc(inf.holiday)}</span>`
     : inf.observance ? `<span class="c-hol c-obs">${esc(inf.observance)}</span>` : ''}
         ${mk.length ? `<span class="c-chips">${chips}</span><span class="c-dots">${dots}</span>` : ''}
@@ -578,6 +603,10 @@ function renderDay() {
   }
   if (inf.observance) {
     items.push(`<li><span class="cd-ico">📌</span><span class="cd-main"><span class="cd-title">${esc(inf.observance)}</span><span class="cd-sub">памятный день, рабочий</span></span></li>`);
+  }
+  const merc = retrogradeDay(d);
+  if (merc) {
+    items.push(`<li><span class="cd-ico merc">☿</span><span class="cd-main"><span class="cd-title">Ретроградный Меркурий</span><span class="cd-sub">${esc(fmtRange(merc.start, merc.end, now))}</span></span></li>`);
   }
   for (const p of state.paydays) {
     for (const hit of paydaysInRange(cal, p, d, d)) {
@@ -769,6 +798,7 @@ function renderSettings() {
       ${chk('workday', '⏳ До конца рабочего дня')}
       ${chk('holiday', '🎉 До ближайшего праздника')}
       ${chk('newyear', '🎄 До Нового года')}
+      ${chk('mercury', '☿ До ретроградного Меркурия и до его конца')}
     </div>
 
     <h3>Рабочий день</h3>
@@ -794,6 +824,10 @@ function renderSettings() {
     </div>
     <label class="chk"><input type="checkbox" data-s="weekNumbers"${s.weekNumbers ? ' checked' : ''}> Номера недель</label>
     <label class="chk"><input type="checkbox" data-s="analogClock"${s.analogClock ? ' checked' : ''}> Аналоговые часы в «Сегодня»</label>
+    <div class="fld"><span>Место для восхода и заката (тёмное и светлое время на больших часах)</span>
+      <p class="small" style="margin:2px 0 6px">${esc(placeText())}</p>
+      <div class="btn-row"><button class="btn small" data-act="geo-locate">Определить по геолокации</button>${s.geo ? '<button class="btn small ghost" data-act="geo-reset">По стране</button>' : ''}</div>
+    </div>
     <label class="chk"><input type="checkbox" data-s="bigClock"${s.bigClock ? ' checked' : ''}> Большие часы справа (на широком экране, если помещаются)</label>
     <p class="muted small">Любой день можно сделать выходным или рабочим: выберите его в календаре.</p>
 
@@ -921,6 +955,22 @@ $('#setBody').addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-act]');
   if (!btn) return;
   switch (btn.dataset.act) {
+    case 'geo-locate':
+      if (!navigator.geolocation) { toast('Геолокация недоступна в этом браузере'); break; }
+      navigator.geolocation.getCurrentPosition((pos) => {
+        // two decimals (about a kilometre) are plenty for sunrise times
+        const r2 = (x) => Math.round(x * 100) / 100;
+        state.settings.geo = { lat: r2(pos.coords.latitude), lon: r2(pos.coords.longitude), name: '' };
+        touchSettings();
+        commit();
+        toast('Место сохранено');
+      }, () => toast('Не удалось определить место'), { timeout: 15000, maximumAge: 36e5 });
+      break;
+    case 'geo-reset':
+      state.settings.geo = null;
+      touchSettings();
+      commit();
+      break;
     case 'pay-add':
       state.paydays.push({ id: newId(), title: 'Аванс', day: 20, shift: 'before', u: Date.now() });
       commit();

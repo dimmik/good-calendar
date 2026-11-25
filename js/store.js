@@ -5,7 +5,7 @@ const KEY = 'good-calendar:v1';
 export const COLORS = ['#4f5bd5', '#e5534b', '#2f9e5b', '#e09b19', '#c64fbf', '#2a9bb7', '#7a7f8c'];
 const REPEATS = ['none', 'yearly', 'monthly', 'weekly'];
 const SHIFTS = ['before', 'after', 'none'];
-const BUILTINS = ['payday', 'weekend', 'workday', 'holiday', 'newyear'];
+const BUILTINS = ['payday', 'weekend', 'workday', 'holiday', 'newyear', 'mercury'];
 
 export function defaultState() {
   return {
@@ -20,7 +20,8 @@ export function defaultState() {
       country: 'rs',
       workStart: '09:00',
       workEnd: '18:00',
-      builtins: { payday: true, weekend: true, workday: true, holiday: true, newyear: true },
+      builtins: { payday: true, weekend: true, workday: true, holiday: true, newyear: true, mercury: true },
+      geo: null, // { lat, lon, name } for sunrise/sunset; null = the capital of the calendar country
       weekNumbers: false,
       analogClock: false,
       bigClock: true,
@@ -98,6 +99,10 @@ export function normalize(raw) {
   if (typeof s.analogClock === 'boolean' && raw.v >= 3) settings.analogClock = s.analogClock;
   if (typeof s.bigClock === 'boolean') settings.bigClock = s.bigClock;
   if (typeof s.clock24 === 'boolean') settings.clock24 = s.clock24;
+  if (s.geo && typeof s.geo === 'object' && Number.isFinite(s.geo.lat) && Number.isFinite(s.geo.lon)
+    && Math.abs(s.geo.lat) <= 90 && Math.abs(s.geo.lon) <= 180) {
+    settings.geo = { lat: s.geo.lat, lon: s.geo.lon, name: isStr(s.geo.name, 80) ? s.geo.name : '' };
+  }
   if (['auto', 'light', 'dark'].includes(s.theme)) settings.theme = s.theme;
   settings.builtins = { ...d.settings.builtins };
   if (s.builtins && typeof s.builtins === 'object') {

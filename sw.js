@@ -1,5 +1,5 @@
 // Network first (always fresh when online), cache as offline fallback.
-const CACHE = 'good-calendar-v5';
+const CACHE = 'good-calendar-v6';
 const ASSETS = [
   './',
   'index.html',
@@ -9,6 +9,7 @@ const ASSETS = [
   'js/version.js',
   'js/timepicker.js',
   'js/sync.js',
+  'js/astro.js',
   'js/dates.js',
   'js/rules.js',
   'js/store.js',

@@ -191,6 +191,11 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .bc-mode:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .bc-svg { flex: none; width: var(--bc-size, 0px); height: var(--bc-size, 0px); overflow: visible; }
 .bc-cap { color: var(--muted); font-size: 14px; text-align: center; flex: none; }
+.bc-sun { color: var(--muted); font-size: 12.5px; text-align: center; flex: none; margin-top: -6px; font-variant-numeric: tabular-nums; }
+#bcSky path { fill: none; stroke-width: 13; stroke-linecap: butt; }
+#bcSky .sky-day { stroke: var(--sky-day); }
+#bcSky .sky-twilight { stroke: var(--sky-tw); }
+#bcSky .sky-night { stroke: var(--sky-night); }
 .bc-g0 { stop-color: var(--card); }
 .bc-g1 { stop-color: var(--card2); }
 .bc-face { fill: url(#bcGrad); stroke: var(--line); stroke-width: 1.5; }
@@ -326,6 +331,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .cd.k-payday .cd-ico { background: var(--pay-soft); }
 .cd.k-holiday .cd-ico, .cd.k-weekend .cd-ico, .cd.k-rest .cd-ico { background: var(--off-soft); }
 .cd.k-newyear .cd-ico, .cd.k-workday .cd-ico { background: var(--accent-soft); }
+.cd.k-mercury .cd-ico { background: var(--merc-soft); color: var(--merc); font-weight: 700; }
 .empty { color: var(--muted); padding: 12px 0; font-size: 14px; }
 
 .events-all { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 10px; }
@@ -377,6 +383,11 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   width: calc(var(--wp, 0) * 100%);
   box-shadow: inset -2px 0 0 color-mix(in srgb, var(--accent) 45%, transparent);
 }
+.c-merc { position: absolute; top: 4px; right: 14px; font-size: 14px; font-weight: 700; line-height: 1; color: var(--merc); pointer-events: none; }
+.cell.merc { --merc-line: inset 0 -3px 0 color-mix(in srgb, var(--merc) 55%, transparent); box-shadow: var(--merc-line); }
+.cell.merc:hover { box-shadow: inset 0 0 0 1px var(--line), var(--merc-line); }
+.cell.merc.sel { box-shadow: inset 0 0 0 2px var(--accent), var(--merc-line); }
+.cd-ico.merc { background: var(--merc-soft); color: var(--merc); font-weight: 700; }
 .cell.ovr::after { content: ""; position: absolute; top: 6px; right: 6px; width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
 
 .c-hol, .c-chips { display: none; }
@@ -565,4 +576,20 @@ dialog.tp-dlg { width: min(340px, calc(100vw - 32px)); }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; scroll-behavior: auto !important; }
+}
+
+/* Mercury retrograde and the sky band of the big clock */
+:root {
+  --merc: #8a55c9; --merc-soft: #f1e9fb;
+  --sky-day: rgba(255, 205, 70, .30); --sky-tw: rgba(240, 130, 70, .32); --sky-night: rgba(35, 45, 110, .20);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --merc: #c4a0f4; --merc-soft: #2d2342;
+    --sky-day: rgba(255, 205, 70, .22); --sky-tw: rgba(240, 130, 70, .28); --sky-night: rgba(0, 0, 0, .45);
+  }
+}
+:root[data-theme="dark"] {
+  --merc: #c4a0f4; --merc-soft: #2d2342;
+  --sky-day: rgba(255, 205, 70, .22); --sky-tw: rgba(240, 130, 70, .28); --sky-night: rgba(0, 0, 0, .45);
 }

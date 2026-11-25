@@ -6,9 +6,32 @@
 import { ymd, parseYmd, isoWeek, plural } from '../js/dates.js';
 import { makeCal, dayInfo, orthodoxEaster, nextPayday, paydayIn, eventDatesInRange, nextOccurrence, buildCountdowns, countWorkDays, nextHoliday } from '../js/rules.js';
 import { defaultState, normalize, encodeShare, decodeShare, mergeStates } from '../js/store.js';
+import { mercuryRetrogrades, sunTimes, skyIntervals, retrogradeDay } from '../js/astro.js';
 
 const results = [];
 const eq = (name, got, want) => results.push([JSON.stringify(got) === JSON.stringify(want), name, got, want]);
+
+// ---- astronomy (published values; tolerance in minutes) ----
+const near = (name, got, isoUtc, min) => eq(name, Math.abs(got - new Date(isoUtc)) <= min * 6e4, true);
+{
+  const r25 = mercuryRetrogrades(2025);
+  eq('2025: three Mercury retrogrades', r25.length, 3);
+  near('Mercury Rx 15 Mar 2025', r25[0].start, '2025-03-15T06:46Z', 60);
+  near('Mercury direct 7 Apr 2025', r25[0].end, '2025-04-07T11:08Z', 60);
+  near('Mercury Rx 9 Nov 2025', r25[2].start, '2025-11-09T19:02Z', 60);
+  near('Mercury direct 29 Nov 2025', r25[2].end, '2025-11-29T17:38Z', 60);
+  eq('retrograde day 1 Mar 2026', !!retrogradeDay(new Date(2026, 2, 1)), true);
+  eq('not retrograde 1 May 2026', !!retrogradeDay(new Date(2026, 4, 1)), false);
+  const bg = sunTimes(new Date(2026, 5, 21), 44.8125, 20.4612);
+  near('Belgrade sunrise 21 Jun', bg.sunrise, '2026-06-21T02:51Z', 4);
+  near('Belgrade sunset 21 Jun', bg.sunset, '2026-06-21T18:29Z', 4);
+  const day = new Date(2026, 11, 21);
+  const sky = skyIntervals(day, new Date(2026, 11, 22), 44.8125, 20.4612);
+  eq('sky: night, twilight, day, twilight, night', sky.map((x) => x.kind), ['night', 'twilight', 'day', 'twilight', 'night']);
+  eq('sky covers the whole day', [+sky[0].from, +sky[sky.length - 1].to], [+day, +new Date(2026, 11, 22)]);
+  const polar = sunTimes(new Date(2026, 5, 21), 78.2, 15.6);
+  eq('Svalbard: polar day', polar.polar, 'day');
+}
 
 // Serbia (default)
 const rs = makeCal(defaultState());
@@ -35,6 +58,10 @@ eq('v2 keeps ru', normalize({ v: 2, settings: { country: 'ru' } }).settings.coun
 eq('clock off by default', defaultState().settings.analogClock, false);
 eq('v2 clock on → off', normalize({ v: 2, settings: { analogClock: true } }).settings.analogClock, false);
 eq('big clock on by default', defaultState().settings.bigClock, true);
+eq('mercury countdown on by default', defaultState().settings.builtins.mercury, true);
+eq('geo default null', defaultState().settings.geo, null);
+eq('geo kept', normalize({ v: 3, settings: { geo: { lat: 45.25, lon: 19.84, name: 'Нови-Сад' } } }).settings.geo, { lat: 45.25, lon: 19.84, name: 'Нови-Сад' });
+eq('bad geo dropped', normalize({ v: 3, settings: { geo: { lat: 145, lon: 19 } } }).settings.geo, null);
 eq('24h dial by default', defaultState().settings.clock24, true);
 eq('12h dial kept', normalize({ v: 3, settings: { clock24: false } }).settings.clock24, false);
 eq('big clock off kept', normalize({ v: 3, settings: { bigClock: false } }).settings.bigClock, false);
@@ -110,7 +137,11 @@ eq('country none', dayInfo(parseYmd('2026-01-05'), { country: 'none' }, {}).off,
 const st3 = defaultState();
 st3.events.push({ id: 'x1', title: 'Отпуск', date: '2026-12-20', time: '', repeat: 'none', color: '#4f5bd5', emoji: '🌴', countdown: true, u: 1 });
 const rows = buildCountdowns(makeCal(st3), new Date(2026, 10, 19, 14, 30));
-eq('countdown ids', rows.map((r) => r.id), ['workday', 'weekend', 'pay:salary', 'ev:x1', 'holiday']);
+eq('countdown ids', rows.map((r) => r.id), ['workday', 'weekend', 'pay:salary', 'ev:x1', 'holiday', 'mercury']);
+{
+  const during = buildCountdowns(makeCal(st3), new Date(2026, 10, 1, 12)).find((r) => r.kind === 'mercury');
+  eq('during retrograde: countdown to its end', [during.id, ymd(during.day)], ['mercury-end', '2026-11-13']);
+}
 eq('work days left during workday', rows.find((r) => r.id === 'weekend').workDays, 2);
 const evening = buildCountdowns(makeCal(st3), new Date(2026, 10, 19, 19, 0));
 eq('work days left after work', evening.find((r) => r.id === 'weekend').workDays, 1);

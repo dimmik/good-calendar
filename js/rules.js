@@ -1,7 +1,8 @@
 // Calendar rules: working days and holidays, paydays, event recurrence, countdowns.
 import {
-  ymd, mdOf, parseYmd, startOfDay, addDays, daysInMonth, dayDiff, isWeekend, withTime, plural, days,
+  ymd, mdOf, parseYmd, startOfDay, addDays, daysInMonth, dayDiff, isWeekend, withTime, plural, days, MONTHS_GEN,
 } from './dates.js';
+import { nextRetrograde } from './astro.js';
 
 // ---------- Россия ----------
 
@@ -291,6 +292,9 @@ export function nextOccurrence(ev, now) {
 
 // ---- Countdowns ----
 
+const hm = (t) => `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+const fmtDM = (t) => `${t.getDate()} ${MONTHS_GEN[t.getMonth()]}`;
+
 export function buildCountdowns(cal, now) {
   const { state, info } = cal;
   const s = state.settings;
@@ -367,6 +371,20 @@ export function buildCountdowns(cal, now) {
     const ny = new Date(today.getMonth() === 0 && today.getDate() === 1 ? today.getFullYear() : today.getFullYear() + 1, 0, 1);
     if (!hol || ymd(hol.date) !== ymd(ny)) {
       rows.push({ id: 'newyear', kind: 'newyear', emoji: '🎄', title: 'Новый год', target: ny, allDay: true, day: ny });
+    }
+  }
+
+  if (b.mercury) {
+    const p = nextRetrograde(now);
+    if (p) {
+      const on = p.start <= now;
+      const t = on ? p.end : p.start;
+      rows.push({
+        id: on ? 'mercury-end' : 'mercury', kind: 'mercury', emoji: '☿',
+        title: on ? 'Конец ретроградного Меркурия' : 'Ретроградный Меркурий',
+        target: t, allDay: false, day: startOfDay(t), time: hm(t),
+        note: on ? 'сейчас ретроградный' : `до ${fmtDM(p.end)}`,
+      });
     }
   }
 

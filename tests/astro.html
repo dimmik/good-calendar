@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Astro check</title>
+<pre id="out">running…</pre>
+<script type="module">
+// Dev helper: prints computed Mercury retrograde periods and Belgrade sun times, for eyeballing.
+import { mercuryRetrogrades, sunTimes } from '../js/astro.js';
+const f = (d) => d && `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+const lines = [];
+for (const y of [2024, 2025, 2026, 2027]) for (const p of mercuryRetrogrades(y)) lines.push(`${y}: ${f(p.start)} → ${f(p.end)}`);
+for (const ds of [[2026, 5, 21], [2026, 11, 21], [2026, 10, 25]]) {
+  const s = sunTimes(new Date(...ds), 44.8125, 20.4612);
+  lines.push(`Belgrade ${ds.join('-')}: dawn ${f(s.dawn)} rise ${f(s.sunrise)} set ${f(s.sunset)} dusk ${f(s.dusk)}`);
+}
+document.getElementById('out').textContent = lines.join('\n');
+</script>

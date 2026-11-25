@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mercury / 12h check</title>
+<style>body { margin: 0; } iframe { border: 0; width: 1880px; height: 1000px; }</style>
+<!-- Dev helper: the app on October 2026 (Mercury retrograde from 24 Oct) with the 12-hour dial, for screenshots. -->
+<iframe id="f" src="../"></iframe>
+<script type="module">
+const f = document.getElementById('f');
+await new Promise((r) => f.addEventListener('load', r, { once: true }));
+await new Promise((r) => setTimeout(r, 700));
+const d = f.contentDocument;
+d.querySelector('[data-act="prev"]').click();
+d.querySelector('.cell[data-day="2026-10-28"]').click();
+const mode = d.querySelector('[data-bc-mode]');
+if (mode && mode.querySelector('.on').textContent === '24') mode.click();
+</script>
