@@ -7,9 +7,35 @@ import { ymd, parseYmd, isoWeek, plural } from '../js/dates.js';
 import { makeCal, dayInfo, orthodoxEaster, nextPayday, paydayIn, eventDatesInRange, nextOccurrence, buildCountdowns, countWorkDays, nextHoliday } from '../js/rules.js';
 import { defaultState, normalize, encodeShare, decodeShare, mergeStates } from '../js/store.js';
 import { mercuryRetrogrades, sunTimes, skyIntervals, retrogradeDay } from '../js/astro.js';
+import { emptyShared, normalizeShared, mergeShared, canonicalShared, packShared, joinLink, parseJoin } from '../js/shared.js';
 
 const results = [];
 const eq = (name, got, want) => results.push([JSON.stringify(got) === JSON.stringify(want), name, got, want]);
+
+// ---- shared calendars ----
+{
+  const mem = { id: 'fam1', repo: 'me/data', path: 'cal/fam1.enc', token: 'github_pat_' + 'x'.repeat(40), key: 'k'.repeat(43), u: 5 };
+  const st = normalize({ v: 3, cals: [mem, { id: 'bad' }] });
+  eq('memberships kept, garbage dropped', st.cals.map((m) => m.id), ['fam1']);
+  const a = { ...defaultState(), cals: [mem] };
+  const b = { ...defaultState(), cals: [], deleted: { fam1: 10 } };
+  eq('leaving a calendar wins over an older membership', mergeStates(a, b).cals.length, 0);
+  eq('membership from another device arrives', mergeStates(defaultState(), a).cals.map((m) => m.id), ['fam1']);
+  eq('old file without cals keeps ours', mergeStates(a, { ...defaultState(), cals: undefined }).cals.length, 1);
+
+  const ev = (id, title, u) => ({ id, title, date: '2026-12-12', time: '', repeat: 'none', color: '#4f5bd5', emoji: '', countdown: true, u });
+  const s1 = { ...emptyShared('fam1', 'Семья', '#2f9e5b', 1), events: [ev('e1', 'Термы', 1), ev('e2', 'Ёлка', 1)] };
+  const s2 = { ...emptyShared('fam1', 'Наша семья', '#2f9e5b', 2), events: [ev('e1', 'Термы в Врдник', 3)], deleted: { e2: 4 } };
+  const m = mergeShared(s1, s2);
+  eq('shared merge: newer edit, deletion, newer name', [m.events.map((e) => e.title), m.name], [['Термы в Врдник'], 'Наша семья']);
+  eq('shared merge is symmetric', canonicalShared(mergeShared(s2, s1)), canonicalShared(m));
+  eq('pack/unpack roundtrip', canonicalShared(normalizeShared(JSON.parse(JSON.stringify(packShared(m))), 'fam1')), canonicalShared(m));
+  const j = parseJoin(joinLink(mem, { name: 'Семья', color: '#2f9e5b' }));
+  eq('invitation roundtrip', [j.member.id, j.member.path, j.member.key, j.name, j.color], ['fam1', 'cal/fam1.enc', mem.key, 'Семья', '#2f9e5b']);
+  let bad = false;
+  try { parseJoin('#join=AAAA'); } catch { bad = true; }
+  eq('broken invitation rejected', bad, true);
+}
 
 // ---- astronomy (published values; tolerance in minutes) ----
 const near = (name, got, isoUtc, min) => eq(name, Math.abs(got - new Date(isoUtc)) <= min * 6e4, true);

@@ -12,6 +12,7 @@ export function defaultState() {
     v: 3,
     events: [],
     paydays: [{ id: 'salary', title: 'Зарплата', day: 5, shift: 'before', u: 0 }],
+    cals: [], // shared calendars this person is in: { id, repo, path, token, key, u } (see shared.js)
     overrides: {},
     overridesU: {}, // date → when its override was last set or removed (for merging)
     deleted: {},
@@ -66,6 +67,20 @@ export function sanitizeEvent(e) {
     countdown: e.countdown !== false,
     u: Number.isFinite(e.u) ? e.u : 0,
   };
+}
+
+const reRepo = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const rePath = /^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)*$/;
+
+/** A shared calendar membership: where its file lives and the key it is encrypted with. */
+export function sanitizeMember(m) {
+  if (!m || typeof m !== 'object') return null;
+  if (!isStr(m.id, 40) || !reId.test(m.id)) return null;
+  if (!isStr(m.repo, 200) || !reRepo.test(m.repo)) return null;
+  if (!isStr(m.path, 300) || !rePath.test(m.path)) return null;
+  if (!isStr(m.token, 255) || !/^[A-Za-z0-9_]{20,255}$/.test(m.token)) return null;
+  if (!isStr(m.key, 43) || !/^[A-Za-z0-9_-]{43}$/.test(m.key)) return null;
+  return { id: m.id, repo: m.repo, path: m.path, token: m.token, key: m.key, u: Number.isFinite(m.u) ? m.u : 0 };
 }
 
 function sanitizePayday(p) {
@@ -126,7 +141,8 @@ export function normalize(raw) {
     for (const [k, v] of ent.slice(0, 200)) deleted[k] = v;
   }
   const settingsU = Number.isFinite(raw.settingsU) ? raw.settingsU : 0;
-  return { v: 3, events, paydays, overrides, overridesU, deleted, settings, settingsU };
+  const cals = Array.isArray(raw.cals) ? raw.cals.slice(0, 30).map(sanitizeMember).filter(Boolean) : [];
+  return { v: 3, events, paydays, cals, overrides, overridesU, deleted, settings, settingsU };
 }
 
 export function load() {
@@ -181,9 +197,9 @@ export function mergeStates(mine, inc) {
  */
 export function replaceWith(mine, next, at = Date.now()) {
   const n = normalize(next);
-  const keep = new Set([...n.events, ...n.paydays].map((x) => x.id));
+  const keep = new Set([...n.events, ...n.paydays, ...n.cals].map((x) => x.id));
   const deleted = { ...mine.deleted, ...n.deleted };
-  for (const x of [...mine.events, ...mine.paydays]) if (!keep.has(x.id)) deleted[x.id] = at;
+  for (const x of [...mine.events, ...mine.paydays, ...(mine.cals || [])]) if (!keep.has(x.id)) deleted[x.id] = at;
   for (const id of keep) delete deleted[id];
   const overridesU = { ...n.overridesU };
   for (const day of new Set([...Object.keys(mine.overrides), ...Object.keys(mine.overridesU || {}), ...Object.keys(n.overrides)])) {
@@ -193,6 +209,7 @@ export function replaceWith(mine, next, at = Date.now()) {
     ...n,
     events: n.events.map((e) => ({ ...e, u: at })),
     paydays: n.paydays.map((p) => ({ ...p, u: at })),
+    cals: n.cals.map((c) => ({ ...c, u: at })),
     deleted,
     overridesU,
     settingsU: at,
@@ -207,9 +224,9 @@ export function canonical(s) {
     return v;
   };
   const byId = (a) => [...a].sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
-  const { events, paydays, overrides, overridesU, deleted, settings, settingsU } = s;
+  const { events, paydays, cals = [], overrides, overridesU, deleted, settings, settingsU } = s;
   return JSON.stringify(sortKeys({
-    events: byId(events), paydays: byId(paydays), overrides, overridesU, deleted, settings, settingsU,
+    events: byId(events), paydays: byId(paydays), cals: byId(cals), overrides, overridesU, deleted, settings, settingsU,
   }));
 }
 
@@ -228,6 +245,7 @@ function mergeItems(mine, inc, rest) {
     v: 3,
     events: mergeList(mine.events, inc.events),
     paydays: mergeList(mine.paydays, inc.paydays),
+    cals: mergeList(mine.cals || [], inc.cals || []),
     deleted,
     ...rest,
   });
@@ -259,8 +277,8 @@ export const SHARE_PARAM = 'import';
 
 /** The part of the state that travels between devices (links, sync). */
 export function shareable(state) {
-  const { events, paydays, overrides, overridesU, deleted, settings, settingsU } = state;
-  return { v: 3, events, paydays, overrides, overridesU, deleted, settings, settingsU };
+  const { events, paydays, cals = [], overrides, overridesU, deleted, settings, settingsU } = state;
+  return { v: 3, events, paydays, cals, overrides, overridesU, deleted, settings, settingsU };
 }
 
 export const b64u = { enc: (bytes) => b64uEnc(bytes), dec: (s) => b64uDec(s) };

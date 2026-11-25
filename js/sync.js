@@ -75,14 +75,17 @@ export function parsePairing(input) {
 
 const aesKey = (k) => crypto.subtle.importKey('raw', b64u.dec(k), 'AES-GCM', false, ['encrypt', 'decrypt']);
 
-export async function encryptState(c, state) {
+export const encryptState = (c, state) => encryptJson(c, shareable(state));
+export const decryptState = async (c, text) => normalize(await decryptJson(c, text));
+
+export async function encryptJson(c, obj) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const data = new TextEncoder().encode(JSON.stringify(shareable(state)));
+  const data = new TextEncoder().encode(JSON.stringify(obj));
   const ct = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, await aesKey(c.key), data));
   return JSON.stringify({ app: 'good-calendar', v: 1, alg: 'A256GCM', iv: b64u.enc(iv), ct: b64u.enc(ct) });
 }
 
-export async function decryptState(c, text) {
+export async function decryptJson(c, text) {
   let env;
   try {
     env = JSON.parse(text);
@@ -98,7 +101,7 @@ export async function decryptState(c, text) {
   } catch {
     throw new SyncError('key', 'Файл зашифрован другим ключом — подключите устройство по ссылке с того, где синхронизация уже работает');
   }
-  return normalize(JSON.parse(new TextDecoder().decode(plain)));
+  return JSON.parse(new TextDecoder().decode(plain));
 }
 
 // ---------- GitHub ----------
@@ -129,36 +132,47 @@ function httpError(res) {
 }
 
 /** The remote file as { sha, state }, or null when there is no file yet. */
-export async function getRemote(c) {
+export async function getRemote(c, unpack = normalize) {
   const res = await gh(c, 'GET');
   if (res.status === 404) return null; // no file yet (if the repo itself is inaccessible, PUT will say so)
   if (!res.ok) throw httpError(res);
   const j = await res.json();
   if (typeof j.content !== 'string') throw new SyncError('format', 'В файле синхронизации не то, что ожидалось');
   const text = atob(j.content.replace(/\s/g, ''));
-  return { sha: j.sha, state: await decryptState(c, text) };
+  return { sha: j.sha, state: unpack(await decryptJson(c, text)) };
 }
 
-/** true when written, false when someone else wrote first (sha mismatch). */
-async function putRemote(c, state, sha) {
-  const body = { message: `sync ${new Date().toISOString()}`, content: btoa(await encryptState(c, state)) };
+/** The new sha when written, null when someone else wrote first (sha mismatch) or GitHub stumbled. */
+async function putRemote(c, packed, sha) {
+  const body = { message: `sync ${new Date().toISOString()}`, content: btoa(await encryptJson(c, packed)) };
   if (sha) body.sha = sha;
   const res = await gh(c, 'PUT', body);
-  if (res.status === 409 || res.status === 422) return false;
+  // 409/422: someone wrote first; 5xx: GitHub sometimes fails commits that follow each other closely
+  if (res.status === 409 || res.status === 422 || res.status >= 500) return null;
   if (!res.ok) throw httpError(res);
-  return true;
+  try { return (await res.json()).content.sha || 'written'; } catch { return 'written'; }
 }
+
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- Engine ----------
 
 /**
- * @param {{ getState: () => object, setState: (s: object) => void, onStatus?: (st: object) => void }} io
+ * One synced file. Defaults are the personal calendar; shared calendars pass their own config,
+ * merge and (un)packing.
  */
-export function createSync({ getState, setState, onStatus = () => {} }) {
+export function createSync({
+  getState, setState, onStatus = () => {},
+  getConfig = loadSyncConfig, saveConfig = saveSyncConfig,
+  merge = mergeStates, canon = canonical, pack = shareable, unpack = normalize,
+}) {
   let running = null;
   let again = false;
   let timer = null;
-  let status = { state: loadSyncConfig() ? 'idle' : 'off' };
+  let status = { state: getConfig() ? 'idle' : 'off' };
+  // Right after a write GitHub may still serve the version it replaced for a few seconds:
+  // remember what was replaced, so that a stale read is waited out instead of fought with.
+  let replaced = null;
 
   const report = (s) => {
     status = s;
@@ -166,21 +180,27 @@ export function createSync({ getState, setState, onStatus = () => {} }) {
   };
 
   async function once() {
-    const c = loadSyncConfig();
+    const c = getConfig();
     if (!c) { report({ state: 'off' }); return; }
     report({ state: 'syncing' });
     try {
       for (let attempt = 0; ; attempt++) {
-        const remote = await getRemote(c);
+        let remote = await getRemote(c, unpack);
+        for (let i = 0; remote && replaced && remote.sha === replaced && i < 4; i++) {
+          await pause(1500 * (i + 1));
+          remote = await getRemote(c, unpack);
+        }
         const local = getState();
-        const merged = remote ? mergeStates(local, remote.state) : normalize(local);
-        if (canonical(merged) !== canonical(local)) setState(merged);
-        if (remote && canonical(merged) === canonical(remote.state)) break;
-        if (await putRemote(c, merged, remote && remote.sha)) break;
-        if (attempt >= 3) throw new SyncError('busy', 'Файл всё время меняется другим устройством, попробую позже');
+        const merged = remote ? merge(local, remote.state) : unpack(pack(local));
+        if (canon(merged) !== canon(local)) setState(merged);
+        if (remote && canon(merged) === canon(remote.state)) break;
+        const written = await putRemote(c, pack(merged), remote && remote.sha);
+        if (written) { replaced = remote && remote.sha; break; }
+        if (attempt >= 4) throw new SyncError('busy', 'Файл всё время меняется другим устройством, попробую позже');
+        await pause(1000 * 2 ** attempt); // 1, 2, 4, 8 s: let the other write settle
       }
       const at = Date.now();
-      saveSyncConfig({ ...c, lastSync: at });
+      saveConfig({ ...c, lastSync: at });
       report({ state: 'ok', at });
     } catch (e) {
       report({ state: 'error', kind: e.kind || 'unknown', error: e.message || String(e), at: Date.now() });
@@ -205,7 +225,7 @@ export function createSync({ getState, setState, onStatus = () => {} }) {
     run,
     /** Debounced sync after local changes. */
     schedule(ms = 2000) {
-      if (!loadSyncConfig()) return;
+      if (!getConfig()) return;
       clearTimeout(timer);
       timer = setTimeout(run, ms);
     },

@@ -670,3 +670,15 @@ dialog.tp-dlg { width: min(340px, calc(100vw - 32px)); }
 .mc-arc .bc-done { stroke: var(--accent); }
 .mc-arc.off .bc-track { stroke: var(--off); stroke-opacity: .22; }
 .mc-12 { fill: var(--text); stroke: none; font-size: 34px; font-weight: 750; text-anchor: middle; dominant-baseline: central; }
+
+/* ---------- Shared calendars (settings) ---------- */
+.cal-row { border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; margin: 8px 0; }
+.cal-top { display: flex; align-items: center; gap: 8px; }
+.cal-dot { flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--c); }
+.cal-name { flex: 1; min-width: 0; font: inherit; font-weight: 650; border: 1px solid transparent; border-radius: 8px; padding: 4px 6px; background: none; color: inherit; }
+.cal-name:hover, .cal-name:focus { border-color: var(--line); background: var(--card2); }
+.cal-show { flex: none; margin: 0; font-size: 13px; }
+.cal-colors { margin: 6px 0 2px; }
+.cal-meta { margin: 4px 0 6px; }
+.cal-new { margin: 10px 0; }
+.cal-new > summary { cursor: pointer; font-weight: 600; color: var(--accent); }

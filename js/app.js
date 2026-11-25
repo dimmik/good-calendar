@@ -8,8 +8,12 @@ import {
 } from './rules.js';
 import {
   load, save, normalize, defaultState, encodeShare, decodeShare, mergeStates, shareUrl, newId,
-  sanitizeEvent, COLORS, STORAGE_KEY, SHARE_PARAM, replaceWith,
+  sanitizeEvent, COLORS, STORAGE_KEY, SHARE_PARAM, replaceWith, sanitizeMember,
 } from './store.js';
+import {
+  JOIN_PARAM, emptyShared, normalizeShared, mergeShared, canonicalShared, packShared, loadShared, saveShared,
+  removeShared, joinLink, parseJoin,
+} from './shared.js';
 import {
   createSync, loadSyncConfig, saveSyncConfig, pairingLink, parsePairing, newKey, validConfig, getRemote,
   DEFAULT_PATH, SYNC_PARAM,
@@ -20,7 +24,11 @@ import { VERSION } from './version.js';
 import { pickTime } from './timepicker.js';
 
 let state = load();
-let cal = makeCal(state);
+const shared = new Map(); // shared calendar id → its events and name (cached on this device)
+const calSyncs = new Map(); // shared calendar id → its sync engine
+let calHidden = loadCalHidden(); // shared calendars hidden on this device
+ensureMembers();
+let cal = makeCal(viewState());
 let now = new Date();
 let todayKey = ymd(now);
 let view = { y: now.getFullYear(), m: now.getMonth() };
@@ -34,7 +42,8 @@ const setText = (el, t) => { if (el && el.textContent !== t) el.textContent = t;
 
 function commit({ keepSettings = false } = {}) {
   if (!save(state)) toast('Не удалось сохранить: хранилище браузера недоступно');
-  cal = makeCal(state);
+  ensureMembers();
+  refreshCal();
   renderAll();
   if (!keepSettings && $('#setDlg').open) renderSettings();
   sync.schedule();
@@ -50,16 +59,202 @@ const sync = createSync({
   setState: (next) => {
     state = next;
     save(state);
-    cal = makeCal(state);
+    ensureMembers();
+    refreshCal();
     renderAll();
     if ($('#setDlg').open) renderSettings();
   },
   onStatus: (st) => {
-    $('#settingsBtn').classList.toggle('warn', st.state === 'error');
+    updateSyncWarn(st);
     const el = $('#syncStatus');
     if (el) { setText(el, syncStatusText(st)); el.classList.toggle('err', st.state === 'error'); }
   },
 });
+
+// ---------- Shared calendars ----------
+
+/** Personal events plus those of the shared calendars shown on this device (marked with their calendar). */
+function viewState() {
+  const events = [...state.events];
+  for (const m of state.cals) {
+    const s = shared.get(m.id);
+    if (!s || calHidden.has(m.id)) continue;
+    for (const e of s.events) events.push({ ...e, color: s.color, cal: m.id, calName: s.name });
+  }
+  return { ...state, events };
+}
+
+function refreshCal() {
+  cal = makeCal(viewState());
+}
+
+const findEvent = (id) => cal.state.events.find((x) => x.id === id);
+
+function loadCalHidden() {
+  try { return new Set(JSON.parse(localStorage.getItem('good-calendar:cal-hidden')) || []); } catch { return new Set(); }
+}
+function saveCalHidden() {
+  try { localStorage.setItem('good-calendar:cal-hidden', JSON.stringify([...calHidden])); } catch { /* no storage */ }
+}
+
+/** Keep caches and sync engines in step with the membership list (which may change on another device). */
+function ensureMembers() {
+  const ids = new Set(state.cals.map((m) => m.id));
+  for (const m of state.cals) {
+    if (!shared.has(m.id)) shared.set(m.id, loadShared(m.id) || emptyShared(m.id));
+    if (!calSyncs.has(m.id)) calSyncs.set(m.id, makeCalSync(m.id));
+  }
+  for (const id of [...shared.keys()]) {
+    if (ids.has(id)) continue;
+    shared.delete(id);
+    calSyncs.delete(id);
+    removeShared(id);
+  }
+}
+
+function makeCalSync(id) {
+  return createSync({
+    getConfig: () => state.cals.find((m) => m.id === id) || null,
+    saveConfig: () => {},
+    getState: () => shared.get(id),
+    setState: (next) => {
+      if (!shared.has(id)) return;
+      shared.set(id, next);
+      saveShared(next);
+      refreshCal();
+      renderAll();
+      if ($('#setDlg').open) renderSettings();
+    },
+    merge: mergeShared,
+    canon: canonicalShared,
+    pack: packShared,
+    unpack: (o) => normalizeShared(o, id),
+    onStatus: (st) => {
+      const el = document.getElementById(`calSt-${id}`);
+      if (el) { setText(el, calStatusText(st)); el.classList.toggle('err', st.state === 'error'); }
+      updateSyncWarn();
+    },
+  });
+}
+
+function calStatusText(st) {
+  if (st.state === 'idle') return 'ещё не синхронизировался';
+  return syncStatusText(st);
+}
+
+function updateSyncWarn(personal = sync.status()) {
+  const bad = personal.state === 'error' || [...calSyncs.values()].some((s) => s.status().state === 'error');
+  $('#settingsBtn').classList.toggle('warn', bad);
+}
+
+function syncAll() {
+  sync.run();
+  for (const s of calSyncs.values()) s.run();
+}
+
+/** Save an event into a calendar ('' = personal); the caller commits. */
+function putEvent(calId, ev) {
+  if (!calId) {
+    const idx = state.events.findIndex((x) => x.id === ev.id);
+    if (idx >= 0) state.events[idx] = ev;
+    else state.events.push(ev);
+    delete state.deleted[ev.id];
+    return;
+  }
+  const s = shared.get(calId);
+  s.events = [...s.events.filter((x) => x.id !== ev.id), ev];
+  delete s.deleted[ev.id];
+  saveShared(s);
+  calSyncs.get(calId).schedule();
+}
+
+function removeEvent(calId, id) {
+  if (!calId) {
+    state.events = state.events.filter((x) => x.id !== id);
+    state.deleted[id] = Date.now();
+    return;
+  }
+  const s = shared.get(calId);
+  if (!s) return;
+  s.events = s.events.filter((x) => x.id !== id);
+  s.deleted[id] = Date.now();
+  saveShared(s);
+  calSyncs.get(calId).schedule();
+}
+
+function calsSectionHtml() {
+  const pc = loadSyncConfig();
+  const rows = state.cals.map((m) => {
+    const s = shared.get(m.id) || emptyShared(m.id);
+    const st = calSyncs.get(m.id)?.status() || { state: 'idle' };
+    const n = s.events.length;
+    return `<div class="cal-row" data-cid="${esc(m.id)}">
+      <div class="cal-top">
+        <span class="cal-dot" style="--c:${s.color}"></span>
+        <input class="cal-name" data-cf="name" value="${esc(s.name)}" maxlength="40" aria-label="Название календаря">
+        <label class="chk cal-show"><input type="checkbox" data-cf="show"${calHidden.has(m.id) ? '' : ' checked'}> видно</label>
+      </div>
+      <div class="colors cal-colors">${COLORS.map((c) => `<label class="sw"><input type="radio" name="calc-${esc(m.id)}" data-cf="color" value="${c}"${c === s.color ? ' checked' : ''}><span style="--c:${c}"></span></label>`).join('')}</div>
+      <p class="small muted cal-meta">${n} ${plural(n, 'событие', 'события', 'событий')} · ${esc(m.repo)} · <span class="sync-status${st.state === 'error' ? ' err' : ''}" id="calSt-${esc(m.id)}">${esc(calStatusText(st))}</span></p>
+      <div class="btn-row">
+        <button class="btn small primary" data-act="cal-invite">Пригласить</button>
+        <button class="btn small" data-act="cal-sync">Синхронизировать</button>
+        <button class="btn small ghost danger" data-act="cal-leave">Убрать у себя</button>
+      </div>
+    </div>`;
+  }).join('');
+  return `
+    <p class="muted small">События общих календарей видны вместе с вашими. У каждого календаря свой ключ: участники одного не прочтут ни ваш, ни другие общие.</p>
+    ${rows}
+    <details class="cal-new"${state.cals.length ? '' : ' open'}>
+      <summary>+ Новый общий календарь</summary>
+      <div class="sync-form">
+        <label class="fld"><span>Название</span><input id="calNewName" placeholder="Например, Семья" maxlength="40" autocomplete="off"></label>
+        <div class="fld"><span>Цвет</span><div class="colors">${COLORS.map((c, i) => `<label class="sw"><input type="radio" name="calNewColor" value="${c}"${i === (state.cals.length + 1) % COLORS.length ? ' checked' : ''}><span style="--c:${c}"></span></label>`).join('')}</div></div>
+        ${pc ? `<label class="chk"><input type="checkbox" id="calSameTok" checked> Тот же репозиторий и токен, что у синхронизации (${esc(pc.repo)})</label>` : ''}
+        <div class="cal-own"${pc ? ' hidden' : ''}>
+          <label class="fld"><span>Репозиторий (владелец/имя)</span><input id="calRepo" value="${esc(pc ? pc.repo : 'dimmik/goodcalc-data')}" autocomplete="off" spellcheck="false"></label>
+          <label class="fld"><span>Токен GitHub — или ссылка подключения синхронизации, из неё возьмутся репозиторий и токен</span><input id="calToken" type="password" autocomplete="off" spellcheck="false"></label>
+        </div>
+        <p class="muted small">В приглашении будут ключ этого календаря и токен. Прочитать другие календари с ним нельзя, но тот же токен позволяет записывать в любой файл репозитория — для людей вне семьи лучше отдельный репозиторий и токен.</p>
+        <div class="btn-row"><button class="btn primary" data-act="cal-create">Создать и пригласить</button></div>
+      </div>
+    </details>
+    <div class="fld"><span>Добавить по приглашению</span>
+      <div class="linkrow">
+        <input id="joinIn" placeholder="Ссылка-приглашение" aria-label="Ссылка-приглашение" autocomplete="off">
+        <button class="btn" data-act="join-apply">Добавить</button>
+      </div>
+    </div>`;
+}
+
+function showInvite(id) {
+  const m = state.cals.find((x) => x.id === id);
+  const s = shared.get(id);
+  if (!m || !s) return;
+  const url = joinLink(m, s);
+  showLink({
+    title: `Пригласить в «${s.name}»`,
+    desc: 'Кто откроет эту ссылку, увидит события этого календаря и сможет их менять — и только этого календаря. В ссылке ключ и токен: отправляйте её только участникам.',
+    url,
+    size: `${url.length} символов`,
+  });
+}
+
+async function askJoin(j) {
+  const id = j.member.id;
+  if (state.cals.some((m) => m.id === id)) { toast(`«${(shared.get(id) || j).name}» уже добавлен`); return; }
+  if (!confirm(`Добавить общий календарь «${j.name}»?\nЕго события будут видны вместе с вашими, и вы сможете их менять.`)) return;
+  const s = emptyShared(id, j.name, j.color, 0);
+  shared.set(id, s);
+  saveShared(s);
+  state.cals.push({ ...j.member, u: Date.now() });
+  delete state.deleted[id];
+  commit();
+  await calSyncs.get(id).run();
+  const st = calSyncs.get(id).status();
+  toast(st.state === 'error' ? `Добавлен, но синхронизация не удалась: ${st.error}` : `Календарь «${shared.get(id).name}» добавлен`);
+}
 
 function syncStatusText(st) {
   const hm = (t) => { const d = new Date(t); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
@@ -377,7 +572,7 @@ function tickBigClock() {
   const today = startOfDay(now);
   const until = new Date(+now + 12 * 36e5);
   const dots = [];
-  for (const ev of state.events) {
+  for (const ev of cal.state.events) {
     if (!ev.time || !eventDatesInRange(ev, today, today).length) continue;
     const t = withTime(today, ev.time);
     if (!dial24() && (t < now || t >= until)) continue;
@@ -530,6 +725,7 @@ function cdValue(r) {
 function cdSub(r) {
   const parts = [fmtShort(r.day, now) + (r.time ? `, ${r.time}` : '')];
   if (r.note) parts.push(r.note);
+  if (r.ev && r.ev.calName) parts.push(r.ev.calName);
   if (r.workDays > 0 && dayDiff(now, r.day) > 0) parts.push(`${r.workDays} раб. ${plural(r.workDays, 'день', 'дня', 'дней')}`);
   return parts.join(' · ');
 }
@@ -573,7 +769,7 @@ function renderCountdowns(force = false) {
 }
 
 function renderEventList() {
-  const evs = [...state.events].sort((a, b) => {
+  const evs = [...cal.state.events].sort((a, b) => {
     const oa = nextOccurrence(a, now);
     const ob = nextOccurrence(b, now);
     if (oa && ob) return oa.start - ob.start;
@@ -593,7 +789,7 @@ function renderEventList() {
     }
     return `<li class="${o ? '' : 'past'}"><button class="ev-btn" data-act="edit" data-id="${esc(ev.id)}">
       <span class="cd-ico${ev.emoji ? '' : ' dot'}" style="--c:${ev.color}">${esc(ev.emoji || '')}</span>
-      <span class="cd-main"><span class="cd-title">${esc(ev.title)}</span><span class="cd-sub">${esc(when)}${rep ? ` · ${rep}` : ''}${ev.countdown ? '' : ' · без отсчёта'}</span></span>
+      <span class="cd-main"><span class="cd-title">${esc(ev.title)}</span><span class="cd-sub">${esc(when)}${rep ? ` · ${rep}` : ''}${ev.countdown ? '' : ' · без отсчёта'}${ev.calName ? ` · ${esc(ev.calName)}` : ''}</span></span>
     </button></li>`;
   }).join('') : '<li class="empty">Событий нет.</li>';
 }
@@ -610,8 +806,8 @@ function marksFor(from, to) {
   for (const p of state.paydays) {
     for (const hit of paydaysInRange(cal, p, from, to)) add(hit.date, { kind: 'pay', title: p.title || 'Зарплата', emoji: '💰', color: 'var(--pay)' });
   }
-  for (const ev of state.events) {
-    for (const d of eventDatesInRange(ev, from, to)) add(d, { kind: 'ev', title: ev.title, emoji: ev.emoji, color: ev.color, time: ev.time, id: ev.id });
+  for (const ev of cal.state.events) {
+    for (const d of eventDatesInRange(ev, from, to)) add(d, { kind: 'ev', title: ev.calName ? `${ev.title} (${ev.calName})` : ev.title, emoji: ev.emoji, color: ev.color, time: ev.time, id: ev.id });
   }
   for (const list of map.values()) list.sort((a, b) => (a.kind === 'pay' ? -1 : 0) - (b.kind === 'pay' ? -1 : 0) || (a.time || '').localeCompare(b.time || ''));
   return map;
@@ -720,13 +916,13 @@ function renderDay() {
       items.push(`<li><span class="cd-ico">💰</span><span class="cd-main"><span class="cd-title">${esc(p.title || 'Зарплата')}</span><span class="cd-sub">${moved ? `за ${fmtLong(hit.nominal, now)}, перенесено с выходного` : `${p.day}-е число`}</span></span></li>`);
     }
   }
-  const evs = state.events
+  const evs = cal.state.events
     .filter((ev) => eventDatesInRange(ev, d, d).length)
     .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
   for (const ev of evs) {
     const rep = { yearly: 'каждый год', monthly: 'каждый месяц', weekly: 'каждую неделю' }[ev.repeat];
     const years = ev.repeat === 'yearly' ? d.getFullYear() - parseYmd(ev.date).getFullYear() : 0;
-    const sub = [ev.time || 'весь день', rep, years > 0 ? `${years} ${plural(years, 'год', 'года', 'лет')}` : ''].filter(Boolean).join(' · ');
+    const sub = [ev.time || 'весь день', rep, years > 0 ? `${years} ${plural(years, 'год', 'года', 'лет')}` : '', ev.calName].filter(Boolean).join(' · ');
     items.push(`<li><button class="ev-btn" data-act="edit" data-id="${esc(ev.id)}">
       <span class="cd-ico${ev.emoji ? '' : ' dot'}" style="--c:${ev.color}">${esc(ev.emoji || '')}</span>
       <span class="cd-main"><span class="cd-title">${esc(ev.title)}</span><span class="cd-sub">${esc(sub)}</span></span>
@@ -795,9 +991,17 @@ function applyTheme() {
 // ---------- Event dialog ----------
 
 let editingId = null;
+let editingCal = '';
 
 function openEvent(ev, date) {
   editingId = ev ? ev.id : null;
+  editingCal = ev ? ev.cal || '' : '';
+  const calSel = $('#evCal');
+  const lastCal = state.cals.some((m) => m.id === uiPrefs.lastCal) ? uiPrefs.lastCal : '';
+  calSel.innerHTML = `<option value="">Мой</option>${state.cals.map((m) => `<option value="${esc(m.id)}">${esc((shared.get(m.id) || {}).name || 'Общий')}</option>`).join('')}`;
+  calSel.value = ev ? editingCal : lastCal;
+  $('#evCalFld').hidden = !state.cals.length;
+  $('#evColors').hidden = !!calSel.value;
   const f = $('#evForm');
   $('#evDlgTitle').textContent = ev ? 'Событие' : 'Новое событие';
   f.title.value = ev ? ev.title : '';
@@ -807,7 +1011,7 @@ function openEvent(ev, date) {
   f.repeat.value = ev ? ev.repeat : 'none';
   f.emoji.value = ev ? ev.emoji : '';
   f.countdown.checked = ev ? ev.countdown : true;
-  const color = ev ? ev.color : COLORS[state.events.length % COLORS.length];
+  const color = ev && !ev.cal ? ev.color : COLORS[state.events.length % COLORS.length];
   $('#evColors').innerHTML = COLORS.map((c) => `<label class="sw"><input type="radio" name="color" value="${c}"${c === color ? ' checked' : ''}><span style="--c:${c}"></span></label>`).join('');
   $('#evDelete').hidden = !ev;
   $('#evDlg').showModal();
@@ -820,6 +1024,9 @@ function showEvTime() {
   b.textContent = v || 'весь день';
   b.classList.toggle('empty', !v);
 }
+
+// a shared calendar paints its events in its own colour
+$('#evCal').addEventListener('change', (e) => { $('#evColors').hidden = !!e.target.value; });
 
 $('#evTimeBtn').addEventListener('click', async () => {
   const f = $('#evForm');
@@ -845,24 +1052,25 @@ $('#evForm').addEventListener('submit', (e) => {
     u: Date.now(),
   });
   if (!ev) { toast('Проверьте название и дату'); return; }
-  const idx = state.events.findIndex((x) => x.id === ev.id);
-  if (idx >= 0) state.events[idx] = ev;
-  else state.events.push(ev);
-  delete state.deleted[ev.id];
+  const target = state.cals.some((m) => m.id === f.cal.value) ? f.cal.value : '';
+  const existed = !!editingId;
+  if (existed && editingCal !== target) removeEvent(editingCal, ev.id); // moved to another calendar
+  putEvent(target, ev);
+  uiPrefs.lastCal = target;
+  saveUi();
   $('#evDlg').close();
   selected = parseYmd(ev.date);
   const occ = nextOccurrence(ev, now);
   if (occ) selected = occ.day;
   view = { y: selected.getFullYear(), m: selected.getMonth() };
   commit();
-  toast(idx >= 0 ? 'Сохранено' : 'Событие добавлено');
+  toast(existed ? 'Сохранено' : 'Событие добавлено');
 });
 
 $('#evDelete').addEventListener('click', () => {
-  const ev = state.events.find((x) => x.id === editingId);
-  if (!ev || !confirm(`Удалить «${ev.title}»?`)) return;
-  state.events = state.events.filter((x) => x.id !== editingId);
-  state.deleted[editingId] = Date.now();
+  const ev = findEvent(editingId);
+  if (!ev || !confirm(`Удалить «${ev.title}»${ev.calName ? ` из «${ev.calName}»` : ''}?`)) return;
+  removeEvent(editingCal, editingId);
   $('#evDlg').close();
   commit();
   toast('Удалено');
@@ -949,6 +1157,9 @@ function renderSettings() {
       <label class="btn small file-btn">Загрузить файл<input type="file" accept="application/json,.json" id="importFile" hidden></label>
     </div>
 
+    <h3>Общие календари</h3>
+    ${calsSectionHtml()}
+
     <h3>Синхронизация</h3>
     ${syncSectionHtml()}
 
@@ -1019,6 +1230,28 @@ async function askPair(c) {
 
 $('#setBody').addEventListener('change', (e) => {
   const t = e.target;
+  if (t.id === 'calSameTok') { $('.cal-own').hidden = t.checked; return; }
+  if (t.dataset.cf) {
+    const id = t.closest('.cal-row').dataset.cid;
+    const s = shared.get(id);
+    if (!s) return;
+    if (t.dataset.cf === 'show') {
+      if (t.checked) calHidden.delete(id); else calHidden.add(id);
+      saveCalHidden();
+      refreshCal();
+      renderAll();
+      return;
+    }
+    if (t.dataset.cf === 'name') s.name = t.value.trim().slice(0, 40) || s.name;
+    if (t.dataset.cf === 'color') s.color = t.value;
+    s.metaU = Date.now();
+    saveShared(s);
+    calSyncs.get(id).schedule();
+    refreshCal();
+    renderAll();
+    renderSettings();
+    return;
+  }
   const s = state.settings;
   if (t.dataset.b) { s.builtins[t.dataset.b] = t.checked; touchSettings(); commit({ keepSettings: true }); return; }
   if (t.dataset.s) {
@@ -1100,6 +1333,57 @@ $('#setBody').addEventListener('click', async (e) => {
       break;
     }
     case 'sync-now': await sync.run(); break;
+    case 'cal-create': {
+      const name = $('#calNewName').value.trim().slice(0, 40) || 'Общий календарь';
+      const color = ($('input[name="calNewColor"]:checked') || {}).value || COLORS[1];
+      const pc = loadSyncConfig();
+      let repo;
+      let token;
+      if (pc && $('#calSameTok') && $('#calSameTok').checked) ({ repo, token } = pc);
+      else {
+        repo = $('#calRepo').value.trim();
+        token = $('#calToken').value.trim();
+        if (token.includes(`${SYNC_PARAM}=`)) {
+          try { ({ repo, token } = parsePairing(token)); } catch { toast('Не получилось прочитать ссылку подключения'); break; }
+        }
+      }
+      const id = newId();
+      const m = sanitizeMember({ id, repo, path: `cal/${id}.enc`, token, key: newKey(), u: Date.now() });
+      if (!m) { toast('Проверьте репозиторий и токен'); break; }
+      const s = emptyShared(id, name, color, Date.now());
+      shared.set(id, s);
+      saveShared(s);
+      state.cals.push(m);
+      delete state.deleted[id];
+      commit();
+      toast('Создаю файл календаря…');
+      await calSyncs.get(id).run();
+      const st = calSyncs.get(id).status();
+      renderSettings();
+      if (st.state === 'error') { toast(`Календарь создан, но синхронизация не удалась: ${st.error}`); break; }
+      showInvite(id);
+      break;
+    }
+    case 'cal-invite': showInvite(btn.closest('.cal-row').dataset.cid); break;
+    case 'cal-sync': await calSyncs.get(btn.closest('.cal-row').dataset.cid)?.run(); break;
+    case 'cal-leave': {
+      const id = btn.closest('.cal-row').dataset.cid;
+      const s = shared.get(id);
+      if (!confirm(`Убрать «${s ? s.name : 'календарь'}» с ваших устройств?\nУ остальных участников он останется.`)) break;
+      state.cals = state.cals.filter((x) => x.id !== id);
+      state.deleted[id] = Date.now();
+      calHidden.delete(id);
+      saveCalHidden();
+      commit();
+      toast('Календарь убран');
+      break;
+    }
+    case 'join-apply': {
+      let j;
+      try { j = parseJoin($('#joinIn').value); } catch { toast('Не получилось прочитать приглашение'); break; }
+      await askJoin(j);
+      break;
+    }
     case 'sync-pair': {
       const c = loadSyncConfig();
       if (c) {
@@ -1252,6 +1536,14 @@ function clearHash() {
 }
 
 async function checkHash() {
+  if (location.hash.includes(`${JOIN_PARAM}=`)) {
+    const h = location.hash;
+    clearHash(); // holds a key and a token
+    let j;
+    try { j = parseJoin(h); } catch { toast('Приглашение повреждено или неполное'); return; }
+    await askJoin(j);
+    return;
+  }
   if (location.hash.includes(`${SYNC_PARAM}=`)) {
     const h = location.hash;
     clearHash(); // the link holds the key and the token: do not leave it in the address bar
@@ -1323,7 +1615,7 @@ document.addEventListener('click', (e) => {
     case 'today': selectDay(now); break;
     case 'new-event': openEvent(null, startOfDay(now)); break;
     case 'new-event-day': openEvent(null, selected); break;
-    case 'edit': openEvent(state.events.find((x) => x.id === btn.dataset.id)); break;
+    case 'edit': openEvent(findEvent(btn.dataset.id)); break;
     case 'clock-mode':
       state.settings.clock24 = !state.settings.clock24;
       touchSettings();
@@ -1341,7 +1633,7 @@ document.addEventListener('click', (e) => {
       break;
     case 'cd': {
       const id = btn.dataset.id;
-      if (id.startsWith('ev:')) openEvent(state.events.find((x) => x.id === id.slice(3)));
+      if (id.startsWith('ev:')) openEvent(findEvent(id.slice(3)));
       else selectDay(parseYmd(btn.dataset.day), { scroll: true });
       break;
     }
@@ -1396,9 +1688,15 @@ document.addEventListener('keydown', (e) => {
 
 // Other tabs / windows
 window.addEventListener('storage', (e) => {
+  if (e.key && e.key.startsWith('good-calendar:cal:')) {
+    const id = e.key.slice('good-calendar:cal:'.length);
+    if (shared.has(id)) { shared.set(id, loadShared(id) || emptyShared(id)); refreshCal(); renderAll(); }
+    return;
+  }
   if (e.key !== STORAGE_KEY) return;
   state = load();
-  cal = makeCal(state);
+  ensureMembers();
+  refreshCal();
   renderAll();
 });
 
@@ -1415,7 +1713,7 @@ function tick() {
   todayKey = ymd(now);
   if (todayKey !== prev) {
     if (ymd(selected) === prev) selected = startOfDay(now);
-    cal = makeCal(state);
+    refreshCal();
     renderAll();
   } else {
     tickToday();
@@ -1432,7 +1730,7 @@ function syncSoon() {
   // on returning to the app; not more often than every 20 seconds
   if (Date.now() - lastSyncRun < 20e3) return;
   lastSyncRun = Date.now();
-  sync.run();
+  syncAll();
 }
 
 document.addEventListener('visibilitychange', () => {
@@ -1520,9 +1818,9 @@ $('#updateClose').addEventListener('click', () => {
   $('#updateBar').hidden = true;
 });
 setInterval(() => checkForUpdate(true), 30 * 60e3);
-window.addEventListener('online', () => { checkForUpdate(true); sync.run(); });
-setInterval(() => { if (!document.hidden) sync.run(); }, 5 * 60e3);
-setTimeout(() => { lastSyncRun = Date.now(); sync.run(); }, 800);
+window.addEventListener('online', () => { checkForUpdate(true); syncAll(); });
+setInterval(() => { if (!document.hidden) syncAll(); }, 5 * 60e3);
+setTimeout(() => { lastSyncRun = Date.now(); syncAll(); }, 800);
 
 renderAll();
 updateInstallBtn();
