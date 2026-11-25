@@ -1,0 +1,18 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Mini clock check</title>
+<style>body { margin: 0; display: flex; gap: 10px; background: #888; } iframe { border: 0; width: 390px; height: 420px; }</style>
+<!-- Dev helper: the phone Today card as is (a) and after tapping the small clock (b). Restores the mode at the end. -->
+<iframe id="a" src="../"></iframe><iframe id="b"></iframe>
+<script type="module">
+const a = document.getElementById('a');
+await new Promise((r) => a.addEventListener('load', r, { once: true }));
+await new Promise((r) => setTimeout(r, 600));
+const b = document.getElementById('b');
+b.src = '../';
+await new Promise((r) => b.addEventListener('load', r, { once: true }));
+await new Promise((r) => setTimeout(r, 600));
+b.contentDocument.querySelector('.mclock').click();
+await new Promise((r) => setTimeout(r, 1500));
+b.contentDocument.querySelector('.mclock').click(); // back, after the screenshot moment has passed
+</script>

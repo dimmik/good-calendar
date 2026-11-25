@@ -271,7 +271,7 @@ function renderBigClock() {
 /** The second hand sweeps by a CSS animation (cheap); this sets its phase to the real clock. */
 function syncSecondHand() {
   const t = new Date();
-  for (const s of $$('#bcS, #mcS')) {
+  for (const s of $$('#bcS')) {
     s.classList.toggle('sweep', !reduceMotion.matches);
     s.style.animationDelay = `-${(t.getSeconds() + t.getMilliseconds() / 1000).toFixed(3)}s`;
   }
@@ -289,16 +289,18 @@ function miniClockSvg() {
     const r1 = q ? 66 : 76;
     ticks += `<line x1="${(Math.sin(a) * r1).toFixed(1)}" y1="${(-Math.cos(a) * r1).toFixed(1)}" x2="${(Math.sin(a) * 86).toFixed(1)}" y2="${(-Math.cos(a) * 86).toFixed(1)}" class="${q ? 'q' : 'h'}"/>`;
   }
-  return `<svg class="mclock" viewBox="-114 -114 228 228" aria-hidden="true">
+  // "12" sits at the top of a 12-hour dial and at the bottom of a 24-hour one, so the mode is visible
+  return `<button class="mclock" data-act="clock-mode" title="Циферблат: ${d24 ? '24' : '12'} часа (нажмите, чтобы переключить)" aria-label="Циферблат ${d24 ? '24' : '12'} часа, переключить">
+  <svg viewBox="-114 -114 228 228" aria-hidden="true">
     <circle r="100" class="mc-face"/>
     <g id="mcSky"></g>
     <g class="mc-ticks">${ticks}</g>
     <g id="mcArc" class="mc-arc"><path class="bc-track"/><path class="bc-done"/></g>
+    <text class="mc-12" y="${d24 ? 44 : -44}">12</text>
     <path id="mcH" class="bc-h" d="M -8 14 L -6 -40 Q 0 -50 6 -40 L 8 14 Z"/>
     <path id="mcM" class="bc-m" d="M -5.5 16 L -3.5 -68 Q 0 -78 3.5 -68 L 5.5 16 Z"/>
-    <g id="mcS" class="bc-s mc-s"><line x1="0" y1="22" x2="0" y2="-84"/></g>
     <circle r="8" class="bc-pin"/><circle r="3" class="bc-pin2"/>
-  </svg>`;
+  </svg></button>`;
 }
 
 function tickMiniClock(force = false) {
@@ -308,12 +310,10 @@ function tickMiniClock(force = false) {
   const min = now.getMinutes() + sec / 60;
   $('#mcH').setAttribute('transform', `rotate(${dialAngle(now).toFixed(2)})`);
   $('#mcM').setAttribute('transform', `rotate(${(min * 6).toFixed(2)})`);
-  if (reduceMotion.matches) $('#mcS').setAttribute('transform', `rotate(${sec * 6})`);
   drawWorkArc($('#mcArc'), 106);
   if (!force && now.getMinutes() === mcMinute) return;
   mcMinute = now.getMinutes();
   $('#mcSky').innerHTML = skyArcs(93);
-  syncSecondHand();
 }
 
 function setHands(t) {
@@ -1324,6 +1324,11 @@ document.addEventListener('click', (e) => {
     case 'new-event': openEvent(null, startOfDay(now)); break;
     case 'new-event-day': openEvent(null, selected); break;
     case 'edit': openEvent(state.events.find((x) => x.id === btn.dataset.id)); break;
+    case 'clock-mode':
+      state.settings.clock24 = !state.settings.clock24;
+      touchSettings();
+      commit({ keepSettings: true });
+      break;
     case 'today-more':
       todayExpanded = !todayExpanded;
       uiPrefs.todayExpanded = todayExpanded;
