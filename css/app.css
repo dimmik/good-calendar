@@ -393,7 +393,7 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .c-hol, .c-chips { display: none; }
 .c-dots { display: flex; gap: 3px; margin-top: 3px; height: 8px; align-items: center; }
 .c-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
-.c-dots .dot-pay { width: auto; height: auto; background: none; color: var(--pay); font-style: normal; font-size: 10px; font-weight: 800; line-height: 1; }
+.c-dots .dot-pay { background: var(--pay); border-radius: 2px; transform: rotate(45deg) scale(.85); }
 
 .month-foot { margin-top: 12px; font-size: 13px; }
 
@@ -592,4 +592,57 @@ dialog.tp-dlg { width: min(340px, calc(100vw - 32px)); }
 :root[data-theme="dark"] {
   --merc: #c4a0f4; --merc-soft: #2d2342;
   --sky-day: rgba(255, 205, 70, .22); --sky-tw: rgba(240, 130, 70, .28); --sky-night: rgba(0, 0, 0, .45);
+}
+
+/* ---------- Big clock: sweeping second hand ---------- */
+#bcS.sweep { animation: bc-sec 60s linear infinite; }
+@keyframes bc-sec { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.bclock.tiny #bcS { animation-play-state: paused; }
+
+/* ---------- Phone and narrow screens ---------- */
+.today-tiles, .today-more, .cd-more { display: none; }
+@media (max-width: 899px) {
+  /* one column: today, the month, the chosen day, then the countdowns */
+  .col-a { display: contents; }
+  .col-a > .today { order: 1; }
+  .layout > .month { order: 2; }
+  .layout > .col-c { order: 3; }
+  .col-a > .countdowns { order: 4; }
+}
+@media (max-width: 599px) {
+  .hide-phone { display: none; }
+  #fsBtn { display: none !important; }
+  .top-actions { gap: 2px; }
+  .topbar .brand span { font-size: 16px; }
+
+  .today-tags { flex-wrap: nowrap; overflow: hidden; }
+  .chip-doy { display: none; }
+  .today:not(.expanded) .bar[data-bar="month"], .today:not(.expanded) .bar[data-bar="year"] { display: none; }
+  .today-more {
+    display: block; margin: 8px auto -6px; padding: 4px 10px; border: 0; background: none;
+    font: inherit; font-size: 12.5px; color: var(--muted); cursor: pointer;
+  }
+  .today-more::after { content: " ▾"; }
+  .today.expanded .today-more::after { content: " ▴"; }
+
+  .today-tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 12px; }
+  .tile {
+    display: flex; flex-direction: column; gap: 2px; min-width: 0; text-align: left;
+    padding: 8px 9px; border-radius: 12px; border: 1px solid var(--line); background: var(--card2);
+    font: inherit; color: var(--text); cursor: pointer;
+  }
+  .tile-t {
+    font-size: 11.5px; line-height: 1.25; color: var(--muted); min-height: 2.5em;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .tile-v { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; color: var(--muted); }
+  .tile-v b { font-size: 18px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+  .tile.hot .tile-v b { color: var(--accent); }
+  .tile.k-payday .tile-v b { color: var(--pay); }
+
+  .cd-list:not(.all) > li:nth-child(n+6) { display: none; }
+  .cd-more { display: block; margin: 6px auto 0; }
+  .cd-more[hidden] { display: none; }
+
+  .c-merc { display: none; }
 }

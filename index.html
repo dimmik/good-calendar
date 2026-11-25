@@ -25,7 +25,9 @@
       <span>Календарь</span>
     </div>
     <div class="top-actions">
-      <button class="btn small" id="installBtn" hidden>Установить</button>
+      <button class="btn small" id="installBtn" title="Установить приложение" aria-label="Установить приложение" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span class="hide-phone">Установить</span>
+      </button>
       <button class="btn small" id="addBtn" title="Новое событие (N)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="hide-xs">Событие</span>
       </button>
@@ -51,6 +53,7 @@
           <button class="btn small ghost" data-act="new-event">+ Событие</button>
         </div>
         <ul class="cd-list" id="cdList"></ul>
+        <button class="btn small ghost cd-more" data-act="cd-more" id="cdMore" hidden></button>
         <details class="events-all" id="eventsAll">
           <summary>Мои события <span class="muted" id="evCount"></span></summary>
           <ul class="ev-list" id="evList"></ul>
@@ -78,7 +81,7 @@
 
     <div class="col-c">
       <section class="card day" id="day" aria-live="polite"></section>
-      <section class="card bclock" id="bclock" aria-hidden="true"></section>
+      <section class="card bclock" id="bclock" aria-label="Часы"></section>
     </div>
   </main>
 

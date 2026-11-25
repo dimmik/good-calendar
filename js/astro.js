@@ -16,11 +16,14 @@ export const PLACES = {
   none: { lat: 44.8125, lon: 20.4612, name: 'Белград' },
 };
 
-export function placeOf(settings) {
-  const g = settings.geo;
-  if (g && Number.isFinite(g.lat) && Number.isFinite(g.lon)) return { lat: g.lat, lon: g.lon, name: g.name || '' };
+/** Coordinates for the sky: this device's own place if set, else the capital of the calendar country. */
+export function placeOf(settings, geo) {
+  if (validGeo(geo)) return { lat: geo.lat, lon: geo.lon, name: '' };
   return PLACES[settings.country] || PLACES.rs;
 }
+
+export const validGeo = (g) => !!g && typeof g === 'object' && Number.isFinite(g.lat) && Number.isFinite(g.lon)
+  && Math.abs(g.lat) <= 90 && Math.abs(g.lon) <= 180;
 
 /**
  * Sun events of a local calendar day (sunrise equation).
@@ -67,7 +70,6 @@ export function skyIntervals(from, to, lat, lon) {
   for (let d = addDays(startOfDay(from), -1); d <= to; d = addDays(d, 1)) {
     const s = sunTimes(d, lat, lon);
     const dayStart = startOfDay(d);
-    const dayEnd = addDays(dayStart, 1);
     if (s.polar === 'day') { marks.push([dayStart, 'day']); continue; }
     if (s.polar === 'night') {
       marks.push([dayStart, s.civilPolar === 'dark' ? 'night' : 'twilight']);
@@ -78,7 +80,6 @@ export function skyIntervals(from, to, lat, lon) {
     marks.push([s.sunrise, 'day']);
     marks.push([s.sunset, 'twilight']);
     if (s.dusk) marks.push([s.dusk, 'night']);
-    void dayEnd;
   }
   marks.sort((a, b) => a[0] - b[0]);
   const out = [];
@@ -178,14 +179,6 @@ export function mercuryRetrogrades(year) {
   }
   retroCache.set(year, out);
   return out;
-}
-
-/** The retrograde period covering a moment, or null. */
-export function retrogradeAt(t) {
-  for (const y of [t.getFullYear()]) {
-    for (const p of mercuryRetrogrades(y)) if (p.start <= t && t < p.end) return p;
-  }
-  return null;
 }
 
 /** Is any part of this local calendar day inside a retrograde period? */

@@ -15,7 +15,7 @@ import {
   DEFAULT_PATH, SYNC_PARAM,
 } from './sync.js';
 
-import { placeOf, PLACES, sunTimes, skyIntervals, retrogradeDay } from './astro.js';
+import { placeOf, PLACES, sunTimes, skyIntervals, retrogradeDay, validGeo } from './astro.js';
 import { VERSION } from './version.js';
 import { pickTime } from './timepicker.js';
 
@@ -92,16 +92,50 @@ function renderToday() {
     <div class="today-tags">
       <span class="chip ${i.off ? 'chip-off' : 'chip-work'}">${esc(kindLabel(i))}</span>
       <span class="chip">неделя ${isoWeek(now)}</span>
-      <span class="chip">день ${dayOfYear(now)} из ${daysInYear(y)}</span>
+      <span class="chip chip-doy">день ${dayOfYear(now)} из ${daysInYear(y)}</span>
     </div>
+    <div class="today-tiles" id="todayTiles"></div>
     <div class="bars" id="bars">
       ${['day', 'work', 'week', 'month', 'year'].map((k) => `
         <div class="bar" data-bar="${k}">
           <div class="bar-top"><span class="bar-l"></span><span class="bar-r"></span></div>
           ${k === 'week' || k === 'month' ? segTrack(k) : '<div class="bar-track"><div class="bar-fill"></div></div>'}
         </div>`).join('')}
-    </div>`;
+    </div>
+    <button class="today-more" data-act="today-more" aria-expanded="${todayExpanded}">${todayExpanded ? 'Скрыть месяц и год' : 'Месяц и год'}</button>`;
+  $('#today').classList.toggle('expanded', todayExpanded);
   tickToday();
+  renderTiles(true);
+}
+
+// Phone: the Today card is compact (month and year bars on demand) and shows the nearest countdowns as tiles.
+const UI_KEY = 'good-calendar:ui';
+const uiPrefs = (() => { try { return JSON.parse(localStorage.getItem(UI_KEY)) || {}; } catch { return {}; } })();
+const saveUi = () => { try { localStorage.setItem(UI_KEY, JSON.stringify(uiPrefs)); } catch { /* private mode */ } };
+let todayExpanded = !!uiPrefs.todayExpanded;
+let cdAll = false;
+const CD_SHORT = 5;
+
+let tilesSig = '';
+function renderTiles(force = false) {
+  const box = $('#todayTiles');
+  if (!box) return;
+  const rows = buildCountdowns(cal, now).slice(0, 3);
+  const sig = rows.map((r) => r.id).join('|');
+  if (force || sig !== tilesSig) {
+    tilesSig = sig;
+    box.innerHTML = rows.map((r) => `<button class="tile k-${r.kind}" data-act="cd" data-id="${esc(r.id)}" data-day="${ymd(r.day)}">
+      <span class="tile-t">${r.emoji ? `${esc(r.emoji)} ` : ''}${esc(r.title)}</span>
+      <span class="tile-v"><b></b> <span></span></span></button>`).join('');
+  }
+  rows.forEach((r, i) => {
+    const el = box.children[i];
+    if (!el) return;
+    const f = cdValue(r);
+    setText($('.tile-v b', el), f.v);
+    setText($('.tile-v span', el), f.v.includes(':') ? '' : f.u); // a running timer needs no unit
+    el.classList.toggle('hot', !!f.hot);
+  });
 }
 
 /** Translucent analog clock drawn under the Today card's content. */
@@ -142,7 +176,6 @@ function tickAnalog() {
 
 const wideMq = matchMedia('(min-width: 1400px)');
 const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
-let bcRaf = 0;
 let bcMinute = -1;
 
 const bigClockOn = () => state.settings.bigClock && wideMq.matches;
@@ -160,16 +193,36 @@ function arcPath(r, a0, span) {
   return `M ${pt(a0)} A ${r} ${r} 0 ${span > 180 ? 1 : 0} 1 ${pt(a0 + span)}`;
 }
 
+// The place for sunrise/sunset belongs to the device (not synced): a phone's location should not move the desktop's.
+const GEO_KEY = 'good-calendar:geo';
+let geo = (() => {
+  try {
+    const g = JSON.parse(localStorage.getItem(GEO_KEY));
+    if (validGeo(g)) return g;
+    // 1.10.0 kept it in the synced settings: take it over once
+    const old = JSON.parse(localStorage.getItem(STORAGE_KEY))?.settings?.geo;
+    if (validGeo(old)) { localStorage.setItem(GEO_KEY, JSON.stringify({ lat: old.lat, lon: old.lon })); return old; }
+  } catch { /* no storage */ }
+  return null;
+})();
+function setGeo(g) {
+  geo = g;
+  try { if (g) localStorage.setItem(GEO_KEY, JSON.stringify(g)); else localStorage.removeItem(GEO_KEY); } catch { /* no storage */ }
+  bcMinute = -1;
+  tickBigClock();
+  renderSettings();
+}
+
 function placeText() {
   const s = state.settings;
-  const p = placeOf(s);
+  const p = placeOf(s, geo);
   const coords = `${p.lat.toFixed(2)}, ${p.lon.toFixed(2)}`;
-  return s.geo ? `По геолокации: ${coords}` : `${(PLACES[s.country] || PLACES.rs).name} (по стране календаря): ${coords}`;
+  return validGeo(geo) ? `По геолокации этого устройства: ${coords}` : `${(PLACES[s.country] || PLACES.rs).name} (по стране календаря): ${coords}`;
 }
 
 function renderBigClock() {
   const el = $('#bclock');
-  if (!bigClockOn()) { el.innerHTML = ''; stopSweep(); return; }
+  if (!bigClockOn()) { el.innerHTML = ''; return; }
   const d24 = dial24();
   let ticks = '';
   const tick = (deg, kind, r1, r2 = 95) => {
@@ -210,24 +263,33 @@ function renderBigClock() {
   <div class="bc-cap" id="bcCap"></div><div class="bc-sun" id="bcSun"></div>`;
   bcMinute = -1;
   tickBigClock();
-  startSweep();
+  syncSecondHand();
+}
+
+/** The second hand sweeps by a CSS animation (cheap); this sets its phase to the real clock. */
+function syncSecondHand() {
+  const s = $('#bcS');
+  if (!s) return;
+  const t = new Date();
+  s.classList.toggle('sweep', !reduceMotion.matches);
+  s.style.animationDelay = `-${(t.getSeconds() + t.getMilliseconds() / 1000).toFixed(3)}s`;
 }
 
 function setHands(t) {
   const h = $('#bcH');
   if (!h) return;
-  const sec = t.getSeconds() + (reduceMotion.matches ? 0 : t.getMilliseconds() / 1000);
+  const sec = t.getSeconds();
   const min = t.getMinutes() + sec / 60;
   const hr = t.getHours() + min / 60;
   h.setAttribute('transform', `rotate(${(dial24() ? hr * 15 : (hr % 12) * 30).toFixed(3)})`);
   $('#bcM').setAttribute('transform', `rotate(${(min * 6).toFixed(3)})`);
-  $('#bcS').setAttribute('transform', `rotate(${(sec * 6).toFixed(3)})`);
+  if (reduceMotion.matches) $('#bcS').setAttribute('transform', `rotate(${sec * 6})`);
 }
 
 /** Once a second: work-day arc and digital readout; once a minute: date, event dots, caption. */
 function tickBigClock() {
   if (!$('#bcH')) return;
-  if (!bcRaf) setHands(now);
+  setHands(now);
   const s = state.settings;
   const i = cal.info(now);
   const a = withTime(now, s.workStart);
@@ -248,6 +310,7 @@ function tickBigClock() {
   setText($('#bcDigital'), `${pad2(now.getHours())}:${pad2(now.getMinutes())}`);
   if (now.getMinutes() === bcMinute) return;
   bcMinute = now.getMinutes();
+  syncSecondHand(); // keep the animation in step with the clock
   setText($('#bcMonth'), MONTHS[now.getMonth()].toUpperCase());
   setText($('#bcDate'), `${WD_SHORT[now.getDay()].toUpperCase()} ${now.getDate()}`);
   // today's timed events as dots on the rim: on a 24-hour dial all of them (past ones faded),
@@ -264,7 +327,7 @@ function tickBigClock() {
   }
   $('#bcDots').innerHTML = dots.join('');
   // daylight, twilight and night: the whole day on a 24-hour dial, the next 12 hours on a 12-hour one
-  const pl = placeOf(s);
+  const pl = placeOf(s, geo);
   const from = dial24() ? today : now;
   const to = dial24() ? addDays(today, 1) : until;
   $('#bcSky').innerHTML = skyIntervals(from, to, pl.lat, pl.lon).map((iv) => {
@@ -283,21 +346,6 @@ function tickBigClock() {
   else if (p >= 1) text = `Рабочий день закончился в ${s.workEnd}`;
   else text = `Рабочий день до ${s.workEnd} · ${Math.floor(p * 100)}%`;
   setText($('#bcCap'), text);
-}
-
-function sweep() {
-  bcRaf = 0;
-  if (!$('#bcH') || document.hidden || $('#bclock').classList.contains('tiny')) return;
-  setHands(new Date());
-  bcRaf = requestAnimationFrame(sweep);
-}
-function startSweep() {
-  if (bcRaf || reduceMotion.matches || !$('#bcH') || $('#bclock').classList.contains('tiny')) return;
-  bcRaf = requestAnimationFrame(sweep);
-}
-function stopSweep() {
-  if (bcRaf) cancelAnimationFrame(bcRaf);
-  bcRaf = 0;
 }
 
 $('#bclock').addEventListener('click', (e) => {
@@ -319,10 +367,10 @@ new ResizeObserver(() => {
   const tiny = size < 170;
   if (tiny === el.classList.contains('tiny')) return;
   el.classList.toggle('tiny', tiny);
-  if (tiny) stopSweep(); else startSweep();
+  if (!tiny) syncSecondHand();
 }).observe($('#bclock'));
 wideMq.addEventListener?.('change', () => renderBigClock());
-reduceMotion.addEventListener?.('change', () => { stopSweep(); startSweep(); });
+reduceMotion.addEventListener?.('change', () => renderBigClock());
 
 /** Days of the current week / month: [{ d, off }] */
 function periodDays(k) {
@@ -439,7 +487,12 @@ function cdIcon(r) {
 }
 
 function renderCountdowns(force = false) {
+  renderTiles();
   const rows = buildCountdowns(cal, now);
+  const more = $('#cdMore');
+  more.hidden = rows.length <= CD_SHORT;
+  setText(more, cdAll ? 'Свернуть' : `Показать все (${rows.length})`);
+  $('#cdList').classList.toggle('all', cdAll);
   const sig = `${todayKey}|${rows.map((r) => r.id).join('|')}`;
   const list = $('#cdList');
   if (force || sig !== cdSig) {
@@ -558,7 +611,7 @@ function renderMonth() {
       const label = `${d.getDate()} ${MONTHS_GEN[d.getMonth()]}, ${kindLabel(inf)}${mk.length ? `, ${mk.map((x) => x.title).join(', ')}` : ''}`;
       const chips = mk.slice(0, 3).map((x) => `<span class="chip-ev" style="--c:${x.color}">${x.emoji ? `${esc(x.emoji)} ` : ''}${x.time ? `<b>${x.time}</b> ` : ''}${esc(x.title)}</span>`).join('')
         + (mk.length > 3 ? `<span class="chip-more">ещё ${mk.length - 3}</span>` : '');
-      const dots = mk.slice(0, 4).map((x) => (x.kind === 'pay' ? '<i class="dot-pay">₽</i>' : `<i style="--c:${x.color}"></i>`)).join('');
+      const dots = mk.slice(0, 4).map((x) => (x.kind === 'pay' ? '<i class="dot-pay"></i>' : `<i style="--c:${x.color}"></i>`)).join('');
       html += `<button class="${cls.join(' ')}" data-day="${inf.key}" aria-label="${esc(label)}"${inf.key === selKey ? ' aria-pressed="true"' : ''}>
         <span class="c-num">${d.getDate()}</span>
         ${merc ? '<span class="c-merc" title="Ретроградный Меркурий">☿</span>' : ''}
@@ -826,7 +879,7 @@ function renderSettings() {
     <label class="chk"><input type="checkbox" data-s="analogClock"${s.analogClock ? ' checked' : ''}> Аналоговые часы в «Сегодня»</label>
     <div class="fld"><span>Место для восхода и заката (тёмное и светлое время на больших часах)</span>
       <p class="small" style="margin:2px 0 6px">${esc(placeText())}</p>
-      <div class="btn-row"><button class="btn small" data-act="geo-locate">Определить по геолокации</button>${s.geo ? '<button class="btn small ghost" data-act="geo-reset">По стране</button>' : ''}</div>
+      <div class="btn-row"><button class="btn small" data-act="geo-locate">Определить по геолокации</button>${validGeo(geo) ? '<button class="btn small ghost" data-act="geo-reset">По стране</button>' : ''}</div>
     </div>
     <label class="chk"><input type="checkbox" data-s="bigClock"${s.bigClock ? ' checked' : ''}> Большие часы справа (на широком экране, если помещаются)</label>
     <p class="muted small">Любой день можно сделать выходным или рабочим: выберите его в календаре.</p>
@@ -960,16 +1013,12 @@ $('#setBody').addEventListener('click', async (e) => {
       navigator.geolocation.getCurrentPosition((pos) => {
         // two decimals (about a kilometre) are plenty for sunrise times
         const r2 = (x) => Math.round(x * 100) / 100;
-        state.settings.geo = { lat: r2(pos.coords.latitude), lon: r2(pos.coords.longitude), name: '' };
-        touchSettings();
-        commit();
-        toast('Место сохранено');
+        setGeo({ lat: r2(pos.coords.latitude), lon: r2(pos.coords.longitude) });
+        toast('Место сохранено на этом устройстве');
       }, () => toast('Не удалось определить место'), { timeout: 15000, maximumAge: 36e5 });
       break;
     case 'geo-reset':
-      state.settings.geo = null;
-      touchSettings();
-      commit();
+      setGeo(null);
       break;
     case 'pay-add':
       state.paydays.push({ id: newId(), title: 'Аванс', day: 20, shift: 'before', u: Date.now() });
@@ -1222,6 +1271,16 @@ document.addEventListener('click', (e) => {
     case 'new-event': openEvent(null, startOfDay(now)); break;
     case 'new-event-day': openEvent(null, selected); break;
     case 'edit': openEvent(state.events.find((x) => x.id === btn.dataset.id)); break;
+    case 'today-more':
+      todayExpanded = !todayExpanded;
+      uiPrefs.todayExpanded = todayExpanded;
+      saveUi();
+      renderToday();
+      break;
+    case 'cd-more':
+      cdAll = !cdAll;
+      renderCountdowns();
+      break;
     case 'cd': {
       const id = btn.dataset.id;
       if (id.startsWith('ev:')) openEvent(state.events.find((x) => x.id === id.slice(3)));
@@ -1320,7 +1379,7 @@ function syncSoon() {
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) return;
   tick();
-  startSweep();
+  syncSecondHand();
   checkForUpdate();
   syncSoon();
 });

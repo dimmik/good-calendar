@@ -1,9 +1,11 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>Seed demo data</title>
-<p>Заполняю демо-данными и открываю календарь…</p>
+<p id="msg">Эта страница <b>заменяет данные календаря в этом браузере</b> демо-данными.
+  <a href="#go" onclick="setTimeout(function () { location.reload(); })">Заменить</a></p>
 <script>
-  // Dev helper: fills localStorage with sample events, then opens the app.
+  // Dev helper: fills localStorage with sample events, then opens the app. Runs only as seed.html#go.
+  if (location.hash === '#go') {
   var t = new Date();
   function d(off) {
     var x = new Date(t.getFullYear(), t.getMonth(), t.getDate() + off);
@@ -36,4 +38,5 @@
   };
   localStorage.setItem('good-calendar:v1', JSON.stringify(state));
   location.replace('../');
+  }
 </script>
