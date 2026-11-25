@@ -286,8 +286,16 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   --wd1: #d9d9d2; --wd2: #6cc3ee; --wd3: #f19a94; --wd4: #3fae5e;
   --wd5: #f0c419; --wd6: #2f5fd0; --wd0: #d93a32;
 }
-.bar[data-bar="week"] .bar-track.seg { overflow: visible; margin-bottom: 3px; }
-.bar[data-bar="week"] .bar-track.seg i { box-shadow: 0 4px 0 -1px var(--wd, transparent); }
+/* the strip is drawn inside the segment (below its 6px bar), so both share exact edges */
+.bar[data-bar="week"] .bar-track.seg { height: 10px; }
+.bar[data-bar="week"] .bar-track.seg i {
+  --seg-bg: var(--card2);
+  background:
+    linear-gradient(var(--wd), var(--wd)) bottom / 100% 3px no-repeat,
+    linear-gradient(var(--seg-bg), var(--seg-bg)) top / 100% 6px no-repeat;
+}
+.bar[data-bar="week"] .bar-track.seg i.off { --seg-bg: var(--off-soft); }
+.bar[data-bar="week"] .bar-track.seg b { height: 6px; }
 
 /* ---------- Countdowns ---------- */
 
