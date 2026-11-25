@@ -281,6 +281,13 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
 .bar-track.seg i.off { background: var(--off-soft); }
 .bar-track.seg i.off b { background: var(--off); opacity: .75; }
 .bar[data-bar="month"] .bar-track.seg { gap: 1px; }
+/* Week bar: each day underlined in its own colour (personal weekday palette; Monday is white) */
+:root {
+  --wd1: #d9d9d2; --wd2: #6cc3ee; --wd3: #f19a94; --wd4: #3fae5e;
+  --wd5: #f0c419; --wd6: #2f5fd0; --wd0: #d93a32;
+}
+.bar[data-bar="week"] .bar-track.seg { overflow: visible; margin-bottom: 3px; }
+.bar[data-bar="week"] .bar-track.seg i { box-shadow: 0 4px 0 -1px var(--wd, transparent); }
 
 /* ---------- Countdowns ---------- */
 

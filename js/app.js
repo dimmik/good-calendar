@@ -315,7 +315,7 @@ function periodDays(k) {
 
 /** A bar split into days; days off are tinted, so the working part of the period is visible. */
 function segTrack(k) {
-  return `<div class="bar-track seg">${periodDays(k).map(({ d, off }) => `<i class="${off ? 'off' : ''}" title="${esc(`${d.getDate()} ${MONTHS_GEN[d.getMonth()]}${off ? ', выходной' : ''}`)}"><b></b></i>`).join('')}</div>`;
+  return `<div class="bar-track seg">${periodDays(k).map(({ d, off }) => `<i class="${off ? 'off' : ''}"${k === 'week' ? ` style="--wd:var(--wd${d.getDay()})"` : ''} title="${esc(`${d.getDate()} ${MONTHS_GEN[d.getMonth()]}${off ? ', выходной' : ''}`)}"><b></b></i>`).join('')}</div>`;
 }
 
 /** Share of this week's working time already behind (by working hours), or null without workdays. */
